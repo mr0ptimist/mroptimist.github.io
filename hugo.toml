@@ -2,6 +2,8 @@ baseURL = 'https://mroptimist.github.io/'
 languageCode = 'zh-cn'
 title = 'MrOptimist'
 theme = 'PaperMod'
+paginate = 20
+buildFuture = true
 
 [params]
   description = '一个用 Hugo 搭建的博客'
@@ -12,7 +14,10 @@ theme = 'PaperMod'
   ShowPostNavLinks = true
   ShowBreadCrumbs = true
   ShowCodeCopyButtons = true
+  ShowToc = true
+  TocOpen = true
   secretPassword = '123456'
+  mainSections = ['posts']
 
 [menus]
   [[menus.main]]

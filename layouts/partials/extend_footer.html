@@ -54,3 +54,122 @@
 })();
 </script>
 {{- end }}
+
+<script>
+(function(){
+  var toc = document.querySelector('details.toc');
+  if (!toc) return;
+  var links = toc.querySelectorAll('a');
+  if (!links.length) return;
+
+  // Hide TOC items: keep h1 always, hide sub-headings without number prefix
+  links.forEach(function(link) {
+    var text = link.textContent.trim();
+    // Count nesting depth: how many parent <ul> elements
+    var depth = 0;
+    var parent = link.parentElement;
+    while (parent && parent !== toc) {
+      if (parent.tagName === 'UL') depth++;
+      parent = parent.parentElement;
+    }
+    // depth 1 = h1, depth 2 = h2, always show
+    // depth 3+ = h3/h4/..., only show if starts with number
+    if (depth > 2 && !/^[\d一二三四五六七八九十]/.test(text)) {
+      var li = link.closest('li');
+      if (li) li.style.display = 'none';
+    }
+  });
+
+  // Clean up empty nested ul
+  toc.querySelectorAll('ul').forEach(function(ul) {
+    var visible = ul.querySelectorAll(':scope > li:not([style*="display: none"])');
+    if (visible.length === 0) ul.style.display = 'none';
+  });
+
+  var headings = [];
+  links.forEach(function(link) {
+    var li = link.closest('li');
+    if (li && li.style.display === 'none') return;
+    var id = link.getAttribute('href').slice(1);
+    var el = document.getElementById(id);
+    if (el) headings.push({el: el, link: link});
+  });
+
+  function highlight() {
+    var scrollY = window.scrollY + 100;
+    var active = null;
+    for (var i = headings.length - 1; i >= 0; i--) {
+      if (headings[i].el.offsetTop <= scrollY) {
+        active = headings[i];
+        break;
+      }
+    }
+    links.forEach(function(l) { l.classList.remove('toc-active'); });
+    if (active) {
+      active.link.classList.add('toc-active');
+      if (toc.scrollHeight > toc.clientHeight) {
+        var linkTop = active.link.offsetTop - toc.offsetTop;
+        if (linkTop < toc.scrollTop || linkTop > toc.scrollTop + toc.clientHeight - 40) {
+          toc.scrollTop = linkTop - toc.clientHeight / 3;
+        }
+      }
+    }
+  }
+
+  window.addEventListener('scroll', highlight);
+  highlight();
+})();
+</script>
+
+<script>
+(function(){
+  var widthPanel = document.getElementById('width-panel');
+  var widthSlider = document.getElementById('width-slider');
+  var widthValue = document.getElementById('width-value');
+  var widthToggle = document.getElementById('width-toggle');
+  var mainEl = document.querySelector('.main');
+
+  var saved = sessionStorage.getItem('blog_width');
+  if (saved && mainEl) {
+    mainEl.style.maxWidth = saved + 'px';
+    widthSlider.value = saved;
+    widthValue.textContent = saved;
+  }
+
+  if (widthToggle) {
+    widthToggle.addEventListener('click', function() {
+      widthPanel.style.display = widthPanel.style.display === 'flex' ? 'none' : 'flex';
+    });
+  }
+
+  widthSlider.addEventListener('input', function() {
+    var v = widthSlider.value;
+    widthValue.textContent = v;
+    if (mainEl) mainEl.style.maxWidth = v + 'px';
+    sessionStorage.setItem('blog_width', v);
+  });
+
+  widthPanel.addEventListener('click', function(e) {
+    if (e.target === widthPanel) widthPanel.style.display = 'none';
+  });
+
+  // TOC width slider
+  var tocWidthSlider = document.getElementById('toc-width-slider');
+  var tocWidthValue = document.getElementById('toc-width-value');
+  var tocEl = document.querySelector('details.toc');
+
+  var savedToc = sessionStorage.getItem('blog_toc_width');
+  if (savedToc && tocEl) {
+    tocEl.style.width = savedToc + 'px';
+    tocWidthSlider.value = savedToc;
+    tocWidthValue.textContent = savedToc;
+  }
+
+  tocWidthSlider.addEventListener('input', function() {
+    var v = tocWidthSlider.value;
+    tocWidthValue.textContent = v;
+    if (tocEl) tocEl.style.width = v + 'px';
+    sessionStorage.setItem('blog_toc_width', v);
+  });
+})();
+</script>
