@@ -12,6 +12,7 @@ theme = 'PaperMod'
   ShowPostNavLinks = true
   ShowBreadCrumbs = true
   ShowCodeCopyButtons = true
+  secretPassword = '123456'
 
 [menus]
   [[menus.main]]

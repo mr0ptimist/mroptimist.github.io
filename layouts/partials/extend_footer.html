@@ -1,0 +1,56 @@
+{{- if site.Params.secretPassword }}
+<script>
+(function(){
+  var secret = {{ site.Params.secretPassword }};
+  var unlocked = sessionStorage.getItem('blog_secret') === secret;
+  var hiddenSel = '.secret-post, .secret-term';
+
+  if (unlocked) {
+    document.querySelectorAll(hiddenSel).forEach(function(el) { el.style.display = ''; });
+  }
+
+  var modal = document.getElementById('secret-modal');
+  var input = document.getElementById('secret-modal-input');
+  var toggle = document.getElementById('secret-toggle');
+
+  if (toggle) {
+    toggle.addEventListener('click', function() {
+      if (unlocked) {
+        unlocked = false;
+        sessionStorage.removeItem('blog_secret');
+        document.querySelectorAll(hiddenSel).forEach(function(el) { el.style.display = 'none'; });
+      } else {
+        modal.style.display = 'flex';
+        input.value = '';
+        input.focus();
+      }
+    });
+  }
+
+  function tryUnlock() {
+    if (input.value === secret) {
+      unlocked = true;
+      sessionStorage.setItem('blog_secret', secret);
+      document.querySelectorAll(hiddenSel).forEach(function(el) {
+        el.style.display = '';
+        el.classList.add('secret-fadein');
+      });
+      modal.style.display = 'none';
+    } else {
+      input.value = '';
+      input.classList.add('secret-shake');
+      setTimeout(function(){ input.classList.remove('secret-shake'); }, 400);
+    }
+  }
+
+  document.getElementById('secret-modal-submit').addEventListener('click', tryUnlock);
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') tryUnlock();
+  });
+
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) modal.style.display = 'none';
+  });
+})();
+</script>
+{{- end }}
