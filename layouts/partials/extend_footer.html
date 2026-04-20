@@ -173,3 +173,61 @@
   });
 })();
 </script>
+
+<script>
+(function(){
+  var postContent = document.querySelector('.post-content');
+  if (!postContent) return;
+
+  var h2s = postContent.querySelectorAll('h2');
+  if (!h2s.length) return;
+
+  h2s.forEach(function(h2) {
+    var details = document.createElement('details');
+    details.className = 'collapsible-section';
+    details.open = true; // default open
+
+    var summary = document.createElement('summary');
+    h2.parentNode.insertBefore(details, h2);
+    summary.appendChild(h2);
+    details.appendChild(summary);
+
+    var body = document.createElement('div');
+    body.className = 'collapse-body';
+
+    var sibling = details.nextSibling;
+    // Collect all following siblings until next h2 or end
+    while (sibling) {
+      var current = sibling;
+      sibling = sibling.nextSibling;
+      if (current.nodeType === 1 && current.tagName === 'H2') break;
+      if (current.nodeType === 1 && current.tagName === 'DETAILS' && current.classList.contains('collapsible-section')) break;
+      body.appendChild(current);
+    }
+
+    details.appendChild(body);
+  });
+
+  // Restore collapse state from sessionStorage
+  var path = location.pathname;
+  var states = JSON.parse(sessionStorage.getItem('collapse_state') || '{}');
+  if (states[path]) {
+    var sections = postContent.querySelectorAll('details.collapsible-section');
+    states[path].forEach(function(open, i) {
+      if (sections[i]) sections[i].open = open;
+    });
+  }
+
+  // Save collapse state on toggle
+  document.addEventListener('toggle', function(e) {
+    if (e.target.classList && e.target.classList.contains('collapsible-section')) {
+      var sections = postContent.querySelectorAll('details.collapsible-section');
+      var state = [];
+      sections.forEach(function(s) { state.push(s.open); });
+      var all = JSON.parse(sessionStorage.getItem('collapse_state') || '{}');
+      all[path] = state;
+      sessionStorage.setItem('collapse_state', JSON.stringify(all));
+    }
+  });
+})();
+</script>

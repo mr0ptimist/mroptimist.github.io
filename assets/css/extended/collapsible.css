@@ -1,0 +1,56 @@
+/* Collapsible h2 sections */
+.post-content details.collapsible-section {
+  margin: 1.5em 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0;
+  background: var(--theme);
+  overflow: hidden;
+}
+
+.post-content details.collapsible-section > summary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+  padding: 0.6em 1em;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  user-select: none;
+}
+
+.post-content details.collapsible-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.post-content details.collapsible-section > summary::marker {
+  content: "";
+}
+
+.post-content details.collapsible-section > summary::before {
+  content: "\25B8";
+  display: inline-block;
+  transition: transform 0.2s ease;
+  font-size: 0.9em;
+  flex-shrink: 0;
+}
+
+.post-content details.collapsible-section[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.post-content details.collapsible-section > summary h2 {
+  margin: 0;
+  padding: 0;
+  border: none;
+  font-size: 1.5em;
+  display: inline;
+}
+
+.post-content details.collapsible-section > .collapse-body {
+  padding: 0 1em 1em;
+}
+
+.post-content details.collapsible-section[open] {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
