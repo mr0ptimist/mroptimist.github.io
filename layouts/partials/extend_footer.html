@@ -185,6 +185,7 @@
     function r32(buf, off) { return (buf[off])|(buf[off+1]<<8)|(buf[off+2]<<16)|(buf[off+3]<<24); }
     function str4(buf, off) { return String.fromCharCode(r8(buf,off),r8(buf,off+1),r8(buf,off+2),r8(buf,off+3)); }
     function c565(c) { return [((c>>11)&31)*255/31|0, ((c>>5)&63)*255/63|0, (c&31)*255/31|0]; }
+    function _h2f(h) { var s=(h>>15)&1,e=(h>>10)&31,m=h&1023; if(e===0)return(s?-1:1)*Math.pow(2,-14)*(m/1024); if(e===31)return m===0?(s?-Infinity:Infinity):NaN; return(s?-1:1)*Math.pow(2,e-15)*(1+m/1024); }
 
         // DXGI format reference:
     //   20:D32_FLOAT_S8X24  28:R8G8B8A8_UNORM   29:R8G8B8A8_SRGB
@@ -317,14 +318,29 @@
             }
             return px;
           }
-          // 16-bit single channel (typeless or float): auto-level stretch for visibility
-          if (type==='R16'||type==='R16F') {
+          // 16-bit uint: auto-level stretch
+          if (type==='R16') {
             var su16 = new Uint16Array(this.raw.buffer, m.off, m.w*m.h);
             var vmin=65535, vmax=0;
             for (var j=0;j<su16.length;j++) { if(su16[j]<vmin)vmin=su16[j]; if(su16[j]>vmax)vmax=su16[j]; }
             var range = vmax>vmin ? 255/(vmax-vmin) : 1;
             for (var j=0;j<m.w*m.h;j++) {
               var vv = (su16[j]-vmin)*range|0;
+              px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255;
+            }
+            return px;
+          }
+          // 16-bit half-float: convert to float32 first, then auto-level stretch
+          if (type==='R16F') {
+            var su16 = new Uint16Array(this.raw.buffer, m.off, m.w*m.h);
+            var fmin=1e9, fmax=-1e9;
+            for (var j=0;j<su16.length;j++) {
+              var f = _h2f(su16[j]);
+              if (isFinite(f)) { if (f<fmin)fmin=f; if (f>fmax)fmax=f; }
+            }
+            var frange = fmax>fmin ? 255/(fmax-fmin) : 1;
+            for (var j=0;j<m.w*m.h;j++) {
+              var vv = (_h2f(su16[j])-fmin)*frange|0;
               px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255;
             }
             return px;
@@ -525,15 +541,17 @@
       if (compression !== 0) return null; // Only uncompressed supported
       pos++; // Skip header terminator null byte
 
-      // Build channel info
+      // Build channel info, mapping channel names to RGBA pixel slots
       var chList = [], chBytes = 0;
       for (var i = 0; i < Math.min(channels.length, 4); i++) {
         var bpp = channels[i].type === 2 ? 4 : 2; // FLOAT=4, HALF=2, UINT=2
-        chList.push({name:channels[i].name, bpp:bpp, type:channels[i].type});
+        // EXR stores channels in alphabetical order (A,B,G,R); map name → RGBA slot
+        var chIdx = ({R:0,G:1,B:2,A:3})[channels[i].name];
+        chList.push({name:channels[i].name, bpp:bpp, type:channels[i].type, idx: chIdx !== undefined ? chIdx : i});
         chBytes += bpp;
       }
 
-      // Read scanlines
+      // Read scanlines (planar: all pixels of channel 0, then all pixels of channel 1, ...)
       var pixels = new Float32Array(w * h * 4);
       var scanlinesFound = 0;
       while (pos + 8 <= view.length && scanlinesFound < h) {
@@ -544,22 +562,20 @@
         if (y >= dataWindow[1] && y <= dataWindow[3]) {
           var row = y - dataWindow[1];
           var srcOff = pos;
-          for (var x = 0; x < w && srcOff + chBytes <= pos + scanSize; x++) {
-            var dstOff = (row * w + x) * 4;
-            for (var c = 0; c < chList.length && c < 4; c++) {
+          for (var c = 0; c < chList.length && c < 4; c++) {
+            for (var x = 0; x < w && srcOff + chList[c].bpp <= pos + scanSize; x++) {
+              var dstOff = (row * w + x) * 4;
               if (chList[c].type === 2) { // FLOAT
-                pixels[dstOff + c] = new Float32Array(view.buffer.slice(srcOff, srcOff+4))[0];
+                pixels[dstOff + chList[c].idx] = new Float32Array(view.buffer.slice(srcOff, srcOff+4))[0];
                 srcOff += 4;
               } else if (chList[c].type === 1) { // HALF
                 var hf = (view[srcOff])|(view[srcOff+1]<<8);
-                pixels[dstOff + c] = halfToFloat(hf);
+                pixels[dstOff + chList[c].idx] = halfToFloat(hf);
                 srcOff += 2;
               } else {
                 srcOff += chList[c].bpp;
               }
             }
-            // Skip extra channels beyond 4
-            if (chList.length > 4) srcOff += chBytes - chList.slice(0,4).reduce(function(a,b){return a+b.bpp;},0);
           }
           scanlinesFound++;
         }
@@ -619,6 +635,7 @@ var decodeWorker = (function(){
       function r32(b,o){return (b[o])|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24);}
       function str4(b,o){return String.fromCharCode(r8(b,o),r8(b,o+1),r8(b,o+2),r8(b,o+3));}
       function c565(c){return [((c>>11)&31)*255/31|0, ((c>>5)&63)*255/63|0, (c&31)*255/31|0];}
+      function _h2f(h){var s=(h>>15)&1,e=(h>>10)&31,m=h&1023;if(e===0)return(s?-1:1)*Math.pow(2,-14)*(m/1024);if(e===31)return m===0?(s?-Infinity:Infinity):NaN;return(s?-1:1)*Math.pow(2,e-15)*(1+m/1024);}
       var DXGI_MAP={20:'D32S8',24:'R10G10B10A2',28:'RGBA8',29:'RGBA8_sRGB',35:'R16G16',49:'R8G8',53:'R16',54:'R16F',61:'R8',70:'BC1',71:'BC1',80:'BC4',81:'BC4',83:'BC5',84:'BC5',95:'BC6H',96:'BC6H',98:'BC7',99:'BC7'};
       var DXGI_BPP={20:32,24:32,28:32,29:32,35:32,49:16,53:16,54:16,61:8};
 
@@ -669,12 +686,20 @@ var decodeWorker = (function(){
           for(var j=0;j<w*h;j++){px[j*4]=s16[j*2]*255/65535|0;px[j*4+1]=s16[j*2+1]*255/65535|0;px[j*4+2]=0;px[j*4+3]=255;}
           return px;
         }
-        if(type==='R16'||type==='R16F'){
+        if(type==='R16'){
           var su=new Uint16Array(data.buffer,data.byteOffset,w*h);
           var mn=65535,mx=0;
           for(var j=0;j<su.length;j++){if(su[j]<mn)mn=su[j];if(su[j]>mx)mx=su[j];}
           var rng=mx>mn?255/(mx-mn):1;
           for(var j=0;j<w*h;j++){var vv=(su[j]-mn)*rng|0;px[j*4]=vv;px[j*4+1]=vv;px[j*4+2]=vv;px[j*4+3]=255;}
+          return px;
+        }
+        if(type==='R16F'){
+          var su=new Uint16Array(data.buffer,data.byteOffset,w*h);
+          var fmn=1e9,fmx=-1e9;
+          for(var j=0;j<su.length;j++){var f=_h2f(su[j]);if(isFinite(f)){if(f<fmn)fmn=f;if(f>fmx)fmx=f;}}
+          var fr=fmx>fmn?255/(fmx-fmn):1;
+          for(var j=0;j<w*h;j++){var vv=(_h2f(su[j])-fmn)*fr|0;px[j*4]=vv;px[j*4+1]=vv;px[j*4+2]=vv;px[j*4+3]=255;}
           return px;
         }
         if(type==='D32S8'){
@@ -794,20 +819,20 @@ var decodeWorker = (function(){
         if(!w||!h||channels.length<3||compression!==0)return null;
         pos++;
         var chBytes=0,chList=[];
-        for(var i=0;i<Math.min(channels.length,4);i++){var bpp=channels[i].type===2?4:2;chList.push({bpp:bpp,type:channels[i].type});chBytes+=bpp;}
+        for(var i=0;i<Math.min(channels.length,4);i++){var bpp=channels[i].type===2?4:2;var chIdx=({R:0,G:1,B:2,A:3})[channels[i].name];chList.push({bpp:bpp,type:channels[i].type,idx:chIdx!==undefined?chIdx:i});chBytes+=bpp;}
+        // Planar layout: each scanline stores all pixels of one channel contiguously
         var pixels=new Float32Array(w*h*4),found=0;
         while(pos+8<=view.length&&found<h){
           var y=r32s(view,pos),sz2=r32(view,pos+4);pos+=8;
           if(y>=dataWindow[1]&&y<=dataWindow[3]){
             var row=y-dataWindow[1],so=pos;
-            for(var x=0;x<w&&so+chBytes<=pos+sz2;x++){
-              var dstO=(row*w+x)*4;
-              for(var c=0;c<chList.length&&c<4;c++){
-                if(chList[c].type===2){pixels[dstO+c]=(new Float32Array(view.buffer.slice(so,so+4)))[0];so+=4;}
-                else if(chList[c].type===1){var hf=(view[so])|(view[so+1]<<8);pixels[dstO+c]=_h2f(hf);so+=2;}
+            for(var c=0;c<chList.length&&c<4;c++){
+              for(var x=0;x<w&&so+chList[c].bpp<=pos+sz2;x++){
+                var dstO=(row*w+x)*4;
+                if(chList[c].type===2){pixels[dstO+chList[c].idx]=(new Float32Array(view.buffer.slice(so,so+4)))[0];so+=4;}
+                else if(chList[c].type===1){var hf=(view[so])|(view[so+1]<<8);pixels[dstO+chList[c].idx]=_h2f(hf);so+=2;}
                 else{so+=chList[c].bpp;}
               }
-              if(chList.length>4)so+=chBytes-chList.slice(0,4).reduce(function(a,b){return a+b.bpp;},0);
             }
             found++;
           }
@@ -920,7 +945,7 @@ var decodeWorker = (function(){
         tb.querySelectorAll('.channel-btn').forEach(function(x) { x.classList.remove('active'); });
         b.classList.add('active');
         // Lazy-read source pixels on first click (cached for subsequent switches)
-        if (!straight) {, else read via canvas 2D
+        if (!straight) {
           straight = pxCache.get(img.src);
           if (!straight) {
             straight = readPixels2D(img, w, h);
@@ -953,6 +978,20 @@ var decodeWorker = (function(){
       tb.appendChild(b);
     });
 
+    // Flip Y button — toggles vertical flip on canvas/img
+    var flipBtn = document.createElement('button');
+    flipBtn.className = 'channel-btn flip-btn';
+    flipBtn.textContent = '↕';
+    flipBtn.title = '垂直翻转';
+    flipBtn.addEventListener('click', function() {
+      var el = wrapper.querySelector('canvas') || wrapper.querySelector('img');
+      if (!el) return;
+      var flipped = el.style.transform === 'scaleY(-1)';
+      el.style.transform = flipped ? '' : 'scaleY(-1)';
+      flipBtn.classList.toggle('active', !flipped);
+    });
+    tb.appendChild(flipBtn);
+
     // DDS/EXR: create canvas immediately (browser can't render DDS/EXR natively)
     if (ddsPixels) {
       var cv = document.createElement('canvas');
@@ -962,8 +1001,6 @@ var decodeWorker = (function(){
         var s = 540 / Math.max(w, h);
         cv.style.width = Math.round(w * s) + 'px'; cv.style.height = Math.round(h * s) + 'px';
       }
-      // Standard image format (PNG/JPEG): move <img> into wrapper, convert to canvas on channel click
-    } else {
       var parent = img.parentNode;
       if (parent.tagName === 'P') {
         parent.parentNode.insertBefore(wrapper, parent);
@@ -974,8 +1011,6 @@ var decodeWorker = (function(){
         wrapper.appendChild(cv);
       }
       img.style.display = 'none';
-    } else {
-      // Standard image format (PNG/JPEG): move <img> into wrapper, convert to canvas on channel click
     } else {
       var parent = img.parentNode;
       if (parent.tagName === 'P') {
@@ -1003,13 +1038,21 @@ var decodeWorker = (function(){
       }
       tb.querySelectorAll('.channel-btn').forEach(function(btn) {
         var ch = btn.textContent;
-        if (ch === 'RGB') return;
+        if (ch === 'RGB' || btn.classList.contains('flip-btn')) return;
         if (!(ch === 'RGBA' ? chMap.A : chMap[ch])) btn.style.display = 'none';
       });
       // Auto-click default channel: "R" for single-channel formats, "RGB" otherwise
       var onlyR = chMap.R && !chMap.G && !chMap.B;
       var defBtn = tb.querySelector(onlyR ? '[data-ch=R]' : '[data-ch=RGB]');
       if (defBtn) defBtn.click();
+
+      // Auto-flip if flip_y is true in JSON sidecar
+      if (data.flip_y) {
+        var el = wrapper.querySelector('canvas') || wrapper.querySelector('img');
+        if (el) { el.style.transform = 'scaleY(-1)'; }
+        var fb = tb.querySelector('.flip-btn');
+        if (fb) fb.classList.add('active');
+      }
       var lines = [];
       var fname = img.src.split('/').pop();
       if (fname) lines.unshift(fname);
@@ -1021,8 +1064,8 @@ var decodeWorker = (function(){
       var curMipTop = data.mip === -1 ? 0 : (parseInt(data.mip) || 0);
       lines.push('mip: ' + curMipTop);
       if (ai.content || ai.pipeline_stage) {
-        if (ai.pipeline_stage) lines.push('stage: ' + ai.pipeline_stage);
-        if (ai.content) lines.push('info: ' + ai.content);
+        if (ai.pipeline_stage) lines.push('[AI] stage: ' + ai.pipeline_stage);
+        if (ai.content) lines.push('[AI] ' + ai.content);
       }
       if (!lines.length) return;
       var meta = document.createElement('div'); meta.className = 'channel-meta';
