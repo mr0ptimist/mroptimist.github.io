@@ -266,7 +266,6 @@
             // BC1-5: software decode on CPU
             if (type==='BC1'||type==='BC3'||type==='BC4'||type==='BC5')
               return _decodeBC(data, m.w, m.h, this.fmt);
-            // BC7/BC6H: hardware decode via WebGL BPTC extension (much faster than CPU)
             var glDec = _decodeBC7_WebGL(data, m.w, m.h, this.fmt);
             if (glDec) return glDec;
             // BPTC not supported → magenta placeholder
@@ -421,6 +420,8 @@
         else if (fc==='DXT3'||dx===74||dx===75) { for(var i=0;i<16;i++) block[i*4+3]=((data[bo+(i>>1)]>>((i&1)*4))&15)*17; _bc1Block(data, bo+8, block); }
         else if (fc==='ATI1'||dx===80||dx===81) _bc4Block(data, bo, block);
         else if (fc==='ATI2'||dx===83||dx===84) _bc5Block(data, bo, block);
+        // BC1/BC4/BC5 lack alpha — fill A=255
+        if (!(fc==='DXT3'||fc==='DXT5'||dx===74||dx===75||dx===77||dx===78)) { for(var i=3;i<64;i+=4) block[i]=255; }
         for (var py=0;py<4;py++) for(var px=0;px<4;px++) {
           var gx=bx*4+px, gy=by*4+py;
           if(gx>=w||gy>=h) continue;
@@ -435,13 +436,14 @@
     // Lazy-init shared WebGL context for BC7/BC6H hardware decode
     function _getGL() {
       if (_glCtx && !_glCtx.isContextLost()) return _glCtx;
-      var c = document.createElement('canvas'); c.width=4; c.height=4;
-      _glCtx = c.getContext('webgl2') || c.getContext('webgl');
+      var c = document.createElement('canvas');
+      _glCtx = c.getContext('webgl2', {preserveDrawingBuffer: true})
+            || c.getContext('webgl', {preserveDrawingBuffer: true});
       return _glCtx;
     }
 
-    // Decode BC7/BC6H via WebGL BPTC extension: upload compressed → readPixels RGBA8
-    // Requires EXT_texture_compression_bptc (Chrome/Edge: yes, Firefox: yes, Safari: no)
+    // Decode BC7/BC6H via WebGL — render fullscreen quad + read canvas pixels
+    // More reliable than readPixels from a custom FBO on some drivers
     function _decodeBC7_WebGL(data, w, h, fmt) {
       var gl = _getGL();
       if (!gl) return null;
@@ -451,22 +453,47 @@
       if (fmt.type==='BC7') internalFmt = (fmt.dxgi===99) ? ext.COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT : ext.COMPRESSED_RGBA_BPTC_UNORM_EXT;
       else if (fmt.type==='BC6H') internalFmt = (fmt.dxgi===96) ? ext.COMPRESSED_RGB_BPTC_SIGNED_FLOAT_EXT : ext.COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_EXT;
       else return null;
+      var copy = new Uint8Array(data);
+      // Lazily init shader program (cached on gl context)
+      if (!gl._bcProg) {
+        var vs = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vs, 'attribute vec2 p;varying vec2 t;void main(){gl_Position=vec4(p,0,1);t=p*0.5+0.5;}');
+        gl.compileShader(vs);
+        var fs = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fs, 'precision highp float;varying vec2 t;uniform sampler2D s;void main(){gl_FragColor=texture2D(s,t);}');
+        gl.compileShader(fs);
+        var prog = gl.createProgram();
+        gl.attachShader(prog, vs); gl.attachShader(prog, fs);
+        gl.bindAttribLocation(prog, 0, 'p');
+        gl.linkProgram(prog);
+        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { return null; }
+        var buf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+        gl._bcProg = prog;
+      }
       try {
         var tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.compressedTexImage2D(gl.TEXTURE_2D, 0, internalFmt, w, h, 0, data);
+        gl.compressedTexImage2D(gl.TEXTURE_2D, 0, internalFmt, w, h, 0, copy);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        var fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-        var raw = new Uint8Array(w*h*4);
-        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, raw);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb); gl.deleteTexture(tex);
-        var out = new Uint8ClampedArray(w*h*4), stride = w*4;
-        for (var y=0;y<h;y++) {
-          var srcOff = (h-1-y)*stride, dstOff = y*stride;
-          for (var i=0;i<stride;i++) out[dstOff+i]=raw[srcOff+i];
-        }
-        return out;
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        // Resize canvas to texture size for pixel readback
+        gl.canvas.width = w; gl.canvas.height = h;
+        gl.viewport(0, 0, w, h);
+        gl.useProgram(gl._bcProg);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl._bcProg._buf || gl.getParameter(gl.ARRAY_BUFFER_BINDING));
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.deleteTexture(tex);
+        // Read back via temporary 2D canvas (can't get 2D ctx on WebGL canvas)
+        var cv2 = document.createElement('canvas'); cv2.width = w; cv2.height = h;
+        var ctx2d = cv2.getContext('2d');
+        ctx2d.drawImage(gl.canvas, 0, 0);
+        var imgData = ctx2d.getImageData(0, 0, w, h);
+        return imgData.data;
       } catch(e) { return null; }
     }
 
@@ -723,6 +750,7 @@ var decodeWorker = (function(){
             else if(fc==='DXT3'||dx===74||dx===75){for(var i=0;i<16;i++)block[i*4+3]=((data[bo+(i>>1)]>>((i&1)*4))&15)*17;_bc1(data,bo+8,block);}
             else if(fc==='ATI1'||dx===80||dx===81)_bc4(data,bo,block);
             else if(fc==='ATI2'||dx===83||dx===84)_bc5(data,bo,block);
+            if(!(fc==='DXT3'||fc==='DXT5'||dx===74||dx===75||dx===77||dx===78)){for(var i=3;i<64;i+=4)block[i]=255;}
             for(var py=0;py<4;py++)for(var px2=0;px2<4;px2++){
               var gx=bx*4+px2,gy=by*4+py;
               if(gx>=w||gy>=h)continue;
@@ -923,12 +951,19 @@ var decodeWorker = (function(){
     var wrapper = document.createElement('div');
     wrapper.className = 'channel-container';
 
-    // Scale up tiny images (<540px) for visibility
-    var maxDim = Math.max(w, h);
-    if (maxDim > 0 && maxDim < 540) {
-      var s = 540 / maxDim;
-      if (!ddsPixels) { img.style.width = Math.round(w * s) + 'px'; img.style.height = Math.round(h * s) + 'px'; }
+    // Scale down large images (min(w,h) > 1024), scale up tiny ones (max(w,h) < 540)
+    var displayW = w, displayH = h;
+    var minDim = Math.min(w, h), maxDim = Math.max(w, h);
+    if (minDim > 1024) {
+      var ds = 1024 / minDim;
+      displayW = Math.round(w * ds); displayH = Math.round(h * ds);
+    } else if (maxDim < 540) {
+      var us = 540 / maxDim;
+      displayW = Math.round(w * us); displayH = Math.round(h * us);
       wrapper.classList.add('channel-small');
+    }
+    if (displayW !== w && !ddsPixels) {
+      img.style.width = displayW + 'px';
     }
 
     var tb = document.createElement('div');
@@ -972,7 +1007,7 @@ var decodeWorker = (function(){
         var cv = wrapper.querySelector('canvas');
         if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; wrapper.appendChild(cv); }
         cv.width = w; cv.height = h;
-        if (img.style.width && ddsPixels) { cv.style.width = img.style.width; cv.style.height = img.style.height; }
+        if (displayW !== w) { cv.style.width = displayW + 'px'; }
         cv.getContext('2d').putImageData(new ImageData(px, w, h), 0, 0);
       });
       tb.appendChild(b);
@@ -997,9 +1032,8 @@ var decodeWorker = (function(){
       var cv = document.createElement('canvas');
       cv.className = 'channel-canvas'; cv.width = w; cv.height = h;
       cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(straight), w, h), 0, 0);
-      if (wrapper.classList.contains('channel-small')) {
-        var s = 540 / Math.max(w, h);
-        cv.style.width = Math.round(w * s) + 'px'; cv.style.height = Math.round(h * s) + 'px';
+      if (displayW !== w || displayH !== h) {
+        cv.style.width = displayW + 'px';
       }
       var parent = img.parentNode;
       if (parent.tagName === 'P') {
@@ -1034,6 +1068,12 @@ var decodeWorker = (function(){
       if (rd.format) {
         var fmt = rd.format.toUpperCase();
         if (fmt.startsWith('D')) { chMap.R = true; }
+        // BCn compressed formats — map to known channels per block type
+        else if (fmt.startsWith('BC1')) { chMap.R = true; chMap.G = true; chMap.B = true; }
+        else if (fmt.startsWith('BC2') || fmt.startsWith('BC3') || fmt.startsWith('BC7')) { chMap.R = true; chMap.G = true; chMap.B = true; chMap.A = true; }
+        else if (fmt.startsWith('BC4')) { chMap.R = true; }
+        else if (fmt.startsWith('BC5')) { chMap.R = true; chMap.G = true; }
+        else if (fmt.startsWith('BC6H')) { chMap.R = true; chMap.G = true; chMap.B = true; }
         else { var m = fmt.match(/^([A-Z]\d+(?:[A-Z]\d+)*)/); if (m) { var re = /[RGBA]/g; var cc; while ((cc = re.exec(m[1])) !== null) chMap[cc[0]] = true; } }
       }
       tb.querySelectorAll('.channel-btn').forEach(function(btn) {
