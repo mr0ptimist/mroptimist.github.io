@@ -17,7 +17,7 @@ buildFuture = true
   ShowToc = true
   TocOpen = true
   secretPassword = '123456'
-  mainSections = ['posts']
+  mainSections = ['posts', 'local']
 
   [params.assets]
     favicon = '/favicon.ico'
@@ -51,3 +51,8 @@ buildFuture = true
     name = '归档'
     url = '/archives/'
     weight = 50
+  [[menus.main]]
+    identifier = 'local'
+    name = '本地'
+    url = '/local/'
+    weight = 25

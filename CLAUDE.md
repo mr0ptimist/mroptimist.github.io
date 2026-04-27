@@ -53,4 +53,5 @@ Content writing guidelines are in `content/posts/CLAUDE.md`. Key points:
 - Images use Hugo Page Bundles: post images go in `content/posts/{post-name}/` alongside `index.md`, referenced as relative paths
   - **RenderDoc captures**: export resources as DDS/EXR, place in `images/` subdirectory alongside a JSON sidecar per resource. Reference DDS/EXR directly in markdown — browser JS decodes and displays them.
   - **Screenshots / non-renderdoc**: save as WebP/PNG, run `organize_post_images.py` for compression + Page Bundle organization
+- **Local-only content**: `content/local/` folder for posts visible only in `hugo server` (development). Production builds (`hugo`) ignore this folder via `config/production/hugo.toml` `ignoreFiles`. Structure follows same Page Bundle convention as `content/posts/`.
 - All `##` headings auto-collapse via JS — don't wrap them in additional `<details>` HTML

@@ -1,0 +1,32 @@
+# Production-only config: ignore local-only content when building for deploy
+ignoreFiles = ["local/"]
+
+[params]
+  mainSections = ['posts']
+
+# Override menus: remove "本地" nav item for production
+[[menus.main]]
+  identifier = 'home'
+  name = '首页'
+  url = '/'
+  weight = 10
+[[menus.main]]
+  identifier = 'posts'
+  name = '文章'
+  url = '/posts/'
+  weight = 20
+[[menus.main]]
+  identifier = 'tags'
+  name = '标签'
+  url = '/tags/'
+  weight = 30
+[[menus.main]]
+  identifier = 'categories'
+  name = '分类'
+  url = '/categories/'
+  weight = 40
+[[menus.main]]
+  identifier = 'archives'
+  name = '归档'
+  url = '/archives/'
+  weight = 50
