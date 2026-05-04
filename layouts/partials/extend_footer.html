@@ -134,6 +134,8 @@
     mainEl.style.maxWidth = saved + 'px';
     widthSlider.value = saved;
     widthValue.textContent = saved;
+  } else if (mainEl) {
+    mainEl.style.maxWidth = widthSlider.value + 'px';
   }
 
   if (widthToggle) {
@@ -195,7 +197,8 @@
     var DXGI_MAP = {
       20:'D32S8', 24:'R10G10B10A2', 28:'RGBA8', 29:'RGBA8_sRGB',
       35:'R16G16', 49:'R8G8', 53:'R16', 54:'R16F', 61:'R8',
-      70:'BC1', 71:'BC1', 80:'BC4', 81:'BC4', 83:'BC5', 84:'BC5',
+      70:'BC1', 71:'BC1', 74:'BC3', 75:'BC3', 77:'BC3', 78:'BC3',
+      80:'BC4', 81:'BC4', 83:'BC5', 84:'BC5',
       95:'BC6H', 96:'BC6H', 98:'BC7', 99:'BC7'
     };
 
@@ -244,6 +247,13 @@
       var fmt = detectFmt(view);
       var dataOff = fmt.fourCC === 'DX10' ? 148 : 128;
 
+      // Read DX10 misc flags + array size (for cubemap/texture arrays)
+      var dx10Misc = 0, dx10Array = 1;
+      if (fmt.fourCC === 'DX10') {
+        dx10Misc = r32(view, 136);
+        dx10Array = Math.max(r32(view, 140), 1);
+      }
+
       var mipOff = dataOff, mipList = [];
       for (var i = 0; i < mips; i++) {
         var mw = Math.max(1, w>>i), mh = Math.max(1, h>>i);
@@ -260,14 +270,29 @@
         mipOff += size;
       }
       mips = mipList.length;
+      // Detect array/cubemap: cubemap=6 faces, or DX10 array_size>1, or compute from data size
+      var faceByteSize = mipOff - dataOff;
+      var arraySize = 1;
+      if (dx10Misc & 0x4) arraySize = 6; // DDS_RESOURCE_MISC_TEXTURECUBE
+      else if (dx10Array > 1) arraySize = dx10Array;
+      // Heuristic: if data has more than one face worth, use that count (catches cubemaps where DX10 header arraySize=1)
+      var totalFaces = Math.floor((buf.byteLength - dataOff) / faceByteSize);
+      if (totalFaces > arraySize) arraySize = totalFaces;
+      // arraySize can be overridden by JSON sidecar later
       return {
         w:w, h:h, mips:mips, fmt:fmt, raw: new Uint8Array(buf), mipList:mipList,
+        arraySize: arraySize, faceByteSize: faceByteSize,
         // Decode a single mip level to RGBA8 Uint8ClampedArray
-        getMip: function(n) {
+        // slice: optional array/cubemap face index (0-based)
+        getMip: function(n, slice) {
           if (n < 0 || n >= this.mips) return null;
+          slice = slice || 0;
+          if (slice < 0 || slice >= this.arraySize) return null;
           var m = this.mipList[n];
+          var off = m.off + slice * this.faceByteSize;
+          if (off + m.size > this.raw.byteLength) return null;
           var px = new Uint8ClampedArray(m.w * m.h * 4);
-          var data = new Uint8Array(this.raw.buffer, m.off, m.size);
+          var data = new Uint8Array(this.raw.buffer, off, m.size);
           var type = this.fmt.type;
 
           // -- Compressed formats --
@@ -573,13 +598,14 @@
         pos += size;
       }
 
-      if (!w || !h || channels.length < 3) return null;
+      if (!w || !h || channels.length < 1) return null;
       if (compression !== 0) return null; // Only uncompressed supported
       pos++; // Skip header terminator null byte
 
+      var numCh = Math.min(channels.length, 4);
       // Build channel info, mapping channel names to RGBA pixel slots
       var chList = [], chBytes = 0;
-      for (var i = 0; i < Math.min(channels.length, 4); i++) {
+      for (var i = 0; i < numCh; i++) {
         var bpp = channels[i].type === 2 ? 4 : 2; // FLOAT=4, HALF=2, UINT=2
         // EXR stores channels in alphabetical order (A,B,G,R); map name → RGBA slot
         var chIdx = ({R:0,G:1,B:2,A:3})[channels[i].name];
@@ -618,6 +644,18 @@
         pos += scanSize;
       }
 
+      // Expand single-channel to grayscale RGB
+      if (numCh === 1) {
+        for (var i = 0; i < w * h; i++) {
+          var rv = pixels[i*4];
+          pixels[i*4+1] = rv;
+          pixels[i*4+2] = rv;
+        }
+      } else if (numCh === 2) {
+        for (var i = 0; i < w * h; i++) {
+          pixels[i*4+2] = pixels[i*4+1];
+        }
+      }
       return { w:w, h:h, pixels:pixels, channels:chList.length };
     }
 
@@ -672,7 +710,7 @@ var decodeWorker = (function(){
       function str4(b,o){return String.fromCharCode(r8(b,o),r8(b,o+1),r8(b,o+2),r8(b,o+3));}
       function c565(c){return [((c>>11)&31)*255/31|0, ((c>>5)&63)*255/63|0, (c&31)*255/31|0];}
       function _h2f(h){var s=(h>>15)&1,e=(h>>10)&31,m=h&1023;if(e===0)return(s?-1:1)*Math.pow(2,-14)*(m/1024);if(e===31)return m===0?(s?-Infinity:Infinity):NaN;return(s?-1:1)*Math.pow(2,e-15)*(1+m/1024);}
-      var DXGI_MAP={20:'D32S8',24:'R10G10B10A2',28:'RGBA8',29:'RGBA8_sRGB',35:'R16G16',49:'R8G8',53:'R16',54:'R16F',61:'R8',70:'BC1',71:'BC1',80:'BC4',81:'BC4',83:'BC5',84:'BC5',95:'BC6H',96:'BC6H',98:'BC7',99:'BC7'};
+      var DXGI_MAP={20:'D32S8',24:'R10G10B10A2',28:'RGBA8',29:'RGBA8_sRGB',35:'R16G16',49:'R8G8',53:'R16',54:'R16F',61:'R8',70:'BC1',71:'BC1',74:'BC3',75:'BC3',77:'BC3',78:'BC3',80:'BC4',81:'BC4',83:'BC5',84:'BC5',95:'BC6H',96:'BC6H',98:'BC7',99:'BC7'};
       var DXGI_BPP={20:32,24:32,28:32,29:32,35:32,49:16,53:16,54:16,61:8};
 
       function detectFmt(view){
@@ -853,10 +891,10 @@ var decodeWorker = (function(){
           else if(name==='compression'){compression=view[ds];}
           pos=ds+sz;
         }
-        if(!w||!h||channels.length<3||compression!==0)return null;
+        if(!w||!h||channels.length<1||compression!==0)return null;
         pos++;
-        var chBytes=0,chList=[];
-        for(var i=0;i<Math.min(channels.length,4);i++){var bpp=channels[i].type===2?4:2;var chIdx=({R:0,G:1,B:2,A:3})[channels[i].name];chList.push({bpp:bpp,type:channels[i].type,idx:chIdx!==undefined?chIdx:i});chBytes+=bpp;}
+        var chBytes=0,chList=[],numCh2=Math.min(channels.length,4);
+        for(var i=0;i<numCh2;i++){var bpp=channels[i].type===2?4:2;var chIdx=({R:0,G:1,B:2,A:3})[channels[i].name];chList.push({bpp:bpp,type:channels[i].type,idx:chIdx!==undefined?chIdx:i});chBytes+=bpp;}
         // Planar layout: each scanline stores all pixels of one channel contiguously
         var pixels=new Float32Array(w*h*4),found=0;
         while(pos+8<=view.length&&found<h){
@@ -875,6 +913,8 @@ var decodeWorker = (function(){
           }
           pos+=sz2;
         }
+        if(numCh2===1){for(var i=0;i<w*h;i++){var rv2=pixels[i*4];pixels[i*4+1]=rv2;pixels[i*4+2]=rv2;}}
+        else if(numCh2===2){for(var i=0;i<w*h;i++){pixels[i*4+2]=pixels[i*4+1];}}
         return {w:w,h:h,pixels:pixels};
       }
 
@@ -958,12 +998,14 @@ var decodeWorker = (function(){
   // ddsPixels: pre-decoded RGBA8 from DDS/EXR, or null for native <img> formats
   function processImage(img, w, h, ddsPixels) {
     var straight = ddsPixels || null;
+    var curW = w, curH = h;
     var wrapper = document.createElement('div');
     wrapper.className = 'channel-container';
 
     // Scale down large images (min(w,h) > 1024), scale up tiny ones (max(w,h) < 540)
     var displayW = w, displayH = h;
     var minDim = Math.min(w, h), maxDim = Math.max(w, h);
+    var isLUT = /lut|ramp/i.test(img.src);
     if (minDim > 1024) {
       var ds = 1024 / minDim;
       displayW = Math.round(w * ds); displayH = Math.round(h * ds);
@@ -971,6 +1013,11 @@ var decodeWorker = (function(){
       var us = 540 / maxDim;
       displayW = Math.round(w * us); displayH = Math.round(h * us);
       wrapper.classList.add('channel-small');
+    }
+    // LUT/ramp textures: ensure minimum display dimension >= 20px (stretch only the short side)
+    if (isLUT) {
+      if (displayW < 20) displayW = 20;
+      if (displayH < 20) displayH = 20;
     }
     if (displayW !== w && !ddsPixels) {
       img.style.width = displayW + 'px';
@@ -1016,9 +1063,9 @@ var decodeWorker = (function(){
         if (!ddsPixels) img.style.display = 'none';
         var cv = wrapper.querySelector('canvas');
         if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; wrapper.appendChild(cv); }
-        cv.width = w; cv.height = h;
+        cv.width = curW; cv.height = curH;
         if (displayW !== w) { cv.style.width = displayW + 'px'; }
-        cv.getContext('2d').putImageData(new ImageData(px, w, h), 0, 0);
+        cv.getContext('2d').putImageData(new ImageData(px, curW, curH), 0, 0);
       });
       tb.appendChild(b);
     });
@@ -1042,8 +1089,9 @@ var decodeWorker = (function(){
       var cv = document.createElement('canvas');
       cv.className = 'channel-canvas'; cv.width = w; cv.height = h;
       cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(straight), w, h), 0, 0);
-      if (displayW !== w || displayH !== h) {
+      if (displayW !== w || displayH !== h || isLUT) {
         cv.style.width = displayW + 'px';
+        if (isLUT) cv.style.height = displayH + 'px';
       }
       var parent = img.parentNode;
       if (parent.tagName === 'P') {
@@ -1139,32 +1187,101 @@ var decodeWorker = (function(){
       var meta = document.createElement('div'); meta.className = 'channel-meta';
       var inner = document.createElement('div'); inner.className = 'channel-meta-inner';
       inner.textContent = lines.join('\n');
+      var totalArray = parseInt(rd.array_size) || 0;
+      if (!totalArray) {
+        var cachedDds = ddsCache.get(img.src);
+        if (cachedDds && cachedDds.dds && cachedDds.dds.arraySize > 1) totalArray = cachedDds.dds.arraySize;
+      }
+      // Override DDS arraySize from JSON if available
+      if (totalArray > 0) {
+        var cachedDds2 = ddsCache.get(img.src);
+        if (cachedDds2 && cachedDds2.dds) cachedDds2.dds.arraySize = totalArray;
+      }
+      var curSlice = 0;
+
+      // Unified slice+mip render helper
+      var renderSliceMip = function(s, n) {
+        if (s !== undefined) curSlice = s;
+        if (n !== undefined) curMip = n;
+        var cached = ddsCache.get(img.src);
+        if (cached && cached.dds) {
+          var px = cached.dds.getMip(curMip, curSlice); if (!px) return;
+          var mw = Math.max(1, cached.dds.w >> curMip);
+          var mh = Math.max(1, cached.dds.h >> curMip);
+          var cv = wrapper.querySelector('canvas');
+          if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; wrapper.appendChild(cv); }
+          cv.width = mw; cv.height = mh;
+          cv.getContext('2d').putImageData(new ImageData(px, mw, mh), 0, 0);
+          cv.style.width = displayW + 'px';
+          cv.style.height = isLUT ? displayH + 'px' : 'auto';
+          straight = px;
+          pxCache.set(img.src, px);
+          curW = mw; curH = mh;
+          var activeBtn = tb.querySelector('.channel-btn.active');
+          if (activeBtn) activeBtn.click();
+        }
+      };
+      var curMip = curMipTop;
+
+      var rowStyle = 'display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:2px 3px;background:rgba(0,0,0,0.45);border-radius:3px;margin:1px 0;width:100%';
       if (totalMips > 1) {
-        var curMip = curMipTop;
         var mipRow = document.createElement('div');
-        mipRow.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:2px 0;width:100%';
+        mipRow.style.cssText = rowStyle;
+        var mipLabel = document.createElement('span');
+        mipLabel.style.cssText = 'color:#e8eaed;font-size:10px;min-width:32px;text-align:center';
+        mipLabel.textContent = 'Lv.' + curMip + ' / ' + (totalMips-1);
         var mipSlider = document.createElement('input');
         mipSlider.type = 'range'; mipSlider.min = 0; mipSlider.max = totalMips - 1; mipSlider.value = curMip;
         mipSlider.style.cssText = 'width:60px;height:10px;cursor:pointer;accent-color:#4a9eff';
-        var mipLabel = document.createElement('span');
-        mipLabel.style.cssText = 'color:#e8eaed;font-size:10px;min-width:32px;text-align:center';
-        var setMip = function(n) {
-          curMip = n; mipSlider.value = n; mipLabel.textContent = 'Lv.' + n + ' / ' + (totalMips-1);
-          var cached = ddsCache.get(img.src);
-          if (cached && cached.dds) {
-            var px = cached.dds.getMip(n); if (!px) return;
-            var cv = wrapper.querySelector('canvas');
-            if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; wrapper.appendChild(cv); }
-            cv.width = Math.max(1, cached.dds.w >> n); cv.height = Math.max(1, cached.dds.h >> n);
-            cv.getContext('2d').putImageData(new ImageData(px, cv.width, cv.height), 0, 0);
-          }
-        };
-        mipSlider.addEventListener('input', function(e) { e.stopPropagation(); setMip(parseInt(mipSlider.value)); });
-        mipLabel.textContent = 'Lv.' + curMip + ' / ' + (totalMips-1);
-        mipRow.appendChild(mipSlider); mipRow.appendChild(mipLabel);
+        mipSlider.addEventListener('input', function(e) { e.stopPropagation(); renderSliceMip(undefined, parseInt(mipSlider.value)); mipLabel.textContent = 'Lv.' + mipSlider.value + ' / ' + (totalMips-1); });
+        mipRow.appendChild(mipLabel);
+        mipRow.appendChild(mipSlider);
         tb.appendChild(mipRow);
       }
-      meta.appendChild(inner); wrapper.appendChild(meta);
+      if (totalArray > 1) {
+        var arrRow = document.createElement('div');
+        arrRow.style.cssText = rowStyle;
+        var arrLabel = document.createElement('span');
+        arrLabel.style.cssText = 'color:#e8eaed;font-size:10px;min-width:28px;text-align:center';
+        arrLabel.textContent = 'F.' + curSlice + '/' + (totalArray-1);
+        var arrSlider = document.createElement('input');
+        arrSlider.type = 'range'; arrSlider.min = 0; arrSlider.max = totalArray - 1; arrSlider.value = 0;
+        arrSlider.style.cssText = 'width:60px;height:10px;cursor:pointer;accent-color:#f0a030';
+        arrSlider.addEventListener('input', function(e) { e.stopPropagation(); renderSliceMip(parseInt(arrSlider.value), undefined); arrLabel.textContent = 'F.' + arrSlider.value + '/' + (totalArray-1); });
+        arrRow.appendChild(arrLabel);
+        arrRow.appendChild(arrSlider);
+        tb.appendChild(arrRow);
+      }
+      meta.appendChild(inner);
+      var btnRow = document.createElement('div');
+      btnRow.className = 'channel-meta-btns';
+      var browserBtn = document.createElement('button');
+      browserBtn.className = 'channel-meta-copy';
+      browserBtn.textContent = '复制链接';
+      browserBtn.addEventListener('click', function(e) {
+        e.stopPropagation(); e.preventDefault();
+        navigator.clipboard.writeText(img.src).then(function() {
+          browserBtn.textContent = '已复制';
+          browserBtn.classList.add('copied');
+          setTimeout(function() { browserBtn.textContent = '复制链接'; browserBtn.classList.remove('copied'); }, 1500);
+        });
+      });
+      var localBtn = document.createElement('button');
+      localBtn.className = 'channel-meta-copy';
+      localBtn.textContent = '本地路径';
+      localBtn.addEventListener('click', function(e) {
+        e.stopPropagation(); e.preventDefault();
+        var localPath = ('{{ hugo.WorkingDir }}' + '/content' + decodeURI(new URL(img.src).pathname)).replace(/\//g, '\\');
+        navigator.clipboard.writeText(localPath).then(function() {
+          localBtn.textContent = '已复制';
+          localBtn.classList.add('copied');
+          setTimeout(function() { localBtn.textContent = '本地路径'; localBtn.classList.remove('copied'); }, 1500);
+        });
+      });
+      btnRow.appendChild(browserBtn);
+      btnRow.appendChild(localBtn);
+      meta.appendChild(btnRow);
+      wrapper.appendChild(meta);
     }).catch(function(){});
   }
 
@@ -1253,29 +1370,6 @@ var decodeWorker = (function(){
     // Fallback: load all immediately
     imgs.forEach(function(img) { loadImage(img); });
   }
-
-  // Group small images after all visible ones load
-  var groupTimer = null;
-  var origObserve = observer ? observer.observe.bind(observer) : null;
-  function scheduleGroup() {
-    clearTimeout(groupTimer);
-    groupTimer = setTimeout(function() {
-      var wrappers = c.querySelectorAll('.channel-container');
-      var group = null;
-      wrappers.forEach(function(w) {
-        if (w.closest('.channel-row')) return;
-        if (w.classList.contains('channel-small')) {
-          if (!group) { group = document.createElement('div'); group.className = 'channel-row'; w.parentNode.insertBefore(group, w); }
-          group.appendChild(w);
-        } else { group = null; }
-      });
-    }, 3000);
-  }
-
-  // Watch DOM for newly inserted channel-containers (from async decode)
-  var muOb = new MutationObserver(function() { scheduleGroup(); });
-  muOb.observe(c, { childList: true, subtree: true });
-  scheduleGroup();
 })();
 
 
@@ -1335,3 +1429,4 @@ var decodeWorker = (function(){
   });
 })();
 </script>
+

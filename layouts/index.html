@@ -1,0 +1,42 @@
+{{- define "main" }}
+
+{{- if site.Params.profileMode.enabled }}
+{{- partial "index_profile.html" . }}
+{{- end }}
+
+<script>
+(function(){
+  if (!window.location.pathname.endsWith('/posts/') && !window.location.pathname.endsWith('/posts')) {
+    var scrolled = false;
+    window.addEventListener('wheel', function(e) {
+      if (e.deltaY > 0 && !scrolled) {
+        scrolled = true;
+        var target = '/posts/';
+        document.documentElement.style.opacity = '0';
+        document.documentElement.style.transition = 'opacity 0.3s ease';
+        setTimeout(function(){
+          window.location.href = target;
+        }, 300);
+      }
+    }, { passive: true });
+
+    // Touch scroll support
+    var touchStartY = 0;
+    window.addEventListener('touchstart', function(e) {
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+    window.addEventListener('touchmove', function(e) {
+      if (touchStartY - e.touches[0].clientY > 30 && !scrolled) {
+        scrolled = true;
+        document.documentElement.style.opacity = '0';
+        document.documentElement.style.transition = 'opacity 0.3s ease';
+        setTimeout(function(){
+          window.location.href = '/posts/';
+        }, 300);
+      }
+    }, { passive: true });
+  }
+})();
+</script>
+
+{{- end }}{{/* end main */}}

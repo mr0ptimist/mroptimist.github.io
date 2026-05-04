@@ -19,6 +19,11 @@ buildFuture = true
   secretPassword = '123456'
   mainSections = ['posts', 'local']
 
+  [params.profileMode]
+    enabled = true
+    title = "Hi, 我是 MrOptimist 👋"
+    subtitle = "一个技术美术。AI 真是太好用了你知道吗"
+
   [params.assets]
     favicon = '/favicon.ico'
     favicon16x16 = '/favicon-16x16.png'

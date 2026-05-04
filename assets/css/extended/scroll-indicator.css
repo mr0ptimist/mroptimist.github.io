@@ -1,0 +1,28 @@
+html {
+    scroll-behavior: smooth;
+}
+
+.profile {
+    position: relative;
+}
+
+.scroll-indicator {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0.4;
+    transition: opacity 0.3s;
+    animation: scroll-bounce 2s ease-in-out infinite;
+    color: var(--primary);
+    cursor: pointer;
+}
+
+.scroll-indicator:hover {
+    opacity: 0.8;
+}
+
+@keyframes scroll-bounce {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    50% { transform: translateX(-50%) translateY(8px); }
+}
