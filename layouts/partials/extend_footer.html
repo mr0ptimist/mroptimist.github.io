@@ -233,6 +233,7 @@
       if (type.startsWith('B8G8R8')) return 'BGRA8';
       if (type.startsWith('R10G10B10A2')) return 'R10G10B10A2';
       if (type.startsWith('R11G11B10')) return 'R11G11B10';
+      if (type.startsWith('R16G16B16A16')&&type.indexOf('FLOAT')>=0) return 'RGBA64F';
       if (type.startsWith('R16G16B16A16')) return 'RGBA16';
       if (type.startsWith('R16G16')&&type.indexOf('FLOAT')>=0) return 'R16G16F';
       if (type.startsWith('R16G16')) return 'R16G16';
@@ -486,6 +487,27 @@
             for (var j=0;j<n;j++) { var dv=allF[j*2]; if(isFinite(dv)){if(dv<dmin)dmin=dv;if(dv>dmax)dmax=dv;} }
             var dr=dmax>dmin?255/(dmax-dmin):1;
             for (var j=0;j<n;j++) { var dv=isFinite(allF[j*2])?(allF[j*2]-dmin)*dr|0:0; px[j*4]=dv;px[j*4+1]=dv;px[j*4+2]=dv;px[j*4+3]=255; }
+            return px;
+          }
+          if (fam==='R32F') {
+            var f32 = new Float32Array(this.raw.buffer, off, m.w*m.h);
+            var mn=1e9, mx=-1e9;
+            for (var j=0;j<f32.length;j++) { var v=f32[j]; if(isFinite(v)){if(v<mn)mn=v;if(v>mx)mx=v;} }
+            var rng=mx>mn?255/(mx-mn):1;
+            for (var j=0;j<f32.length;j++) { var v=isFinite(f32[j])?(f32[j]-mn)*rng|0:0; px[j*4]=v;px[j*4+1]=v;px[j*4+2]=v;px[j*4+3]=255; }
+            return px;
+          }
+          if (fam==='RGBA16') {
+            var u16 = new Uint16Array(this.raw.buffer, off, m.w*m.h*4);
+            for (var j=0;j<m.w*m.h;j++) { px[j*4]=u16[j*4]*255/65535|0; px[j*4+1]=u16[j*4+1]*255/65535|0; px[j*4+2]=u16[j*4+2]*255/65535|0; px[j*4+3]=u16[j*4+3]*255/65535|0; }
+            return px;
+          }
+          if (fam==='RGBA64F') {
+            var u16h = new Uint16Array(this.raw.buffer, off, m.w*m.h*4);
+            var fmn=1e9, fmx=-1e9;
+            for (var j=0;j<u16h.length;j++) { var f=_h2f(u16h[j]); if(isFinite(f)){if(f<fmn)fmn=f;if(f>fmx)fmx=f;} }
+            var fr=fmx>fmn?255/(fmx-fmn):1;
+            for (var j=0;j<m.w*m.h;j++) { px[j*4]=(_h2f(u16h[j*4])-fmn)*fr|0; px[j*4+1]=(_h2f(u16h[j*4+1])-fmn)*fr|0; px[j*4+2]=(_h2f(u16h[j*4+2])-fmn)*fr|0; px[j*4+3]=255; }
             return px;
           }
           for (var j=0;j<Math.min(px.length,data.length);j++) px[j]=data[j];
@@ -823,7 +845,7 @@ var decodeWorker = (function(){
 
       function detectFmt(view){
         var fc=str4(view,84);
-        if(fc==='DX10'){var d=r32(view,128),wt=DXGI_MAP[d]||('DXGI_'+d);return {fc:fc,dx:d,type:wt,family:function(t){if(!t)return'';if(t.startsWith('BC1'))return'BC1';if(t.startsWith('BC2')||t.startsWith('BC3'))return'BC3';if(t.startsWith('BC4'))return'BC4';if(t.startsWith('BC5'))return'BC5';if(t.startsWith('BC6H'))return'BC6H';if(t.startsWith('BC7'))return'BC7';if(t.startsWith('R8G8B8A8'))return'RGBA8';if(t.startsWith('B8G8R8'))return'BGRA8';if(t.startsWith('R10G10B10A2'))return'R10G10B10A2';if(t.startsWith('R11G11B10'))return'R11G11B10';if(t.startsWith('R16G16B16A16'))return'RGBA16';if(t.startsWith('R16G16')&&t.indexOf('FLOAT')>=0)return'R16G16F';if(t.startsWith('R16G16'))return'R16G16';if(t.startsWith('R8G8'))return'R8G8';if(t.startsWith('R16_FLOAT'))return'R16F';if((t.startsWith('R16_')||t.startsWith('D16_'))&&t.indexOf('FLOAT')<0)return'R16';if(t.startsWith('R8_')||t==='A8_UNORM')return'R8';if(t.startsWith('R32_FLOAT')||t==='D32_FLOAT')return'R32F';if(t.startsWith('D32_FLOAT_S8'))return'D32S8';if(t.startsWith('R9G9B9E5'))return'RGB9E5';if(t.startsWith('R32G32B32A32'))return'RGBA128F';if(t.startsWith('R32G32B32'))return'RGB96F';return t;}(wt),comp:d>=70,bpp:DXGI_BPP[d]||0};}
+        if(fc==='DX10'){var d=r32(view,128),wt=DXGI_MAP[d]||('DXGI_'+d);return {fc:fc,dx:d,type:wt,family:function(t){if(!t)return'';if(t.startsWith('BC1'))return'BC1';if(t.startsWith('BC2')||t.startsWith('BC3'))return'BC3';if(t.startsWith('BC4'))return'BC4';if(t.startsWith('BC5'))return'BC5';if(t.startsWith('BC6H'))return'BC6H';if(t.startsWith('BC7'))return'BC7';if(t.startsWith('R8G8B8A8'))return'RGBA8';if(t.startsWith('B8G8R8'))return'BGRA8';if(t.startsWith('R10G10B10A2'))return'R10G10B10A2';if(t.startsWith('R11G11B10'))return'R11G11B10';if(t.startsWith('R16G16B16A16')&&t.indexOf('FLOAT')>=0)return'RGBA64F';if(t.startsWith('R16G16B16A16'))return'RGBA16';if(t.startsWith('R16G16')&&t.indexOf('FLOAT')>=0)return'R16G16F';if(t.startsWith('R16G16'))return'R16G16';if(t.startsWith('R8G8'))return'R8G8';if(t.startsWith('R16_FLOAT'))return'R16F';if((t.startsWith('R16_')||t.startsWith('D16_'))&&t.indexOf('FLOAT')<0)return'R16';if(t.startsWith('R8_')||t==='A8_UNORM')return'R8';if(t.startsWith('R32_FLOAT')||t==='D32_FLOAT')return'R32F';if(t.startsWith('D32_FLOAT_S8'))return'D32S8';if(t.startsWith('R9G9B9E5'))return'RGB9E5';if(t.startsWith('R32G32B32A32'))return'RGBA128F';if(t.startsWith('R32G32B32'))return'RGB96F';return t;}(wt),comp:d>=70,bpp:DXGI_BPP[d]||0};}
         if(fc==='DXT1')return{fc:fc,dx:71,type:'BC1_UNORM',family:'BC1',comp:true,bpp:4};
         if(fc==='DXT3')return{fc:fc,dx:75,type:'BC2_UNORM',family:'BC3',comp:true,bpp:8};
         if(fc==='DXT5')return{fc:fc,dx:77,type:'BC3_UNORM',family:'BC3',comp:true,bpp:8};
@@ -900,6 +922,27 @@ var decodeWorker = (function(){
           for(var j=0;j<n;j++){var dv=allF[j*2];if(isFinite(dv)){if(dv<dmn)dmn=dv;if(dv>dmx)dmx=dv;}}
           var dr=dmx>dmn?255/(dmx-dmn):1;
           for(var j=0;j<n;j++){var dv=isFinite(allF[j*2])?(allF[j*2]-dmn)*dr|0:0;px[j*4]=dv;px[j*4+1]=dv;px[j*4+2]=dv;px[j*4+3]=255;}
+          return px;
+        }
+        if(fam==='R32F'){
+          var f32w=new Float32Array(data.buffer,data.byteOffset,w*h);
+          var mn32=1e9,mx32=-1e9;
+          for(var j=0;j<f32w.length;j++){var v=f32w[j];if(isFinite(v)){if(v<mn32)mn32=v;if(v>mx32)mx32=v;}}
+          var rng32=mx32>mn32?255/(mx32-mn32):1;
+          for(var j=0;j<f32w.length;j++){var v=isFinite(f32w[j])?(f32w[j]-mn32)*rng32|0:0;px[j*4]=v;px[j*4+1]=v;px[j*4+2]=v;px[j*4+3]=255;}
+          return px;
+        }
+        if(fam==='RGBA16'){
+          var u16w=new Uint16Array(data.buffer,data.byteOffset,w*h*4);
+          for(var j=0;j<w*h;j++){px[j*4]=u16w[j*4]*255/65535|0;px[j*4+1]=u16w[j*4+1]*255/65535|0;px[j*4+2]=u16w[j*4+2]*255/65535|0;px[j*4+3]=u16w[j*4+3]*255/65535|0;}
+          return px;
+        }
+        if(fam==='RGBA64F'){
+          var u16hw=new Uint16Array(data.buffer,data.byteOffset,w*h*4);
+          var fmnw=1e9,fmxw=-1e9;
+          for(var j=0;j<u16hw.length;j++){var f=_h2f(u16hw[j]);if(isFinite(f)){if(f<fmnw)fmnw=f;if(f>fmxw)fmxw=f;}}
+          var frw=fmxw>fmnw?255/(fmxw-fmnw):1;
+          for(var j=0;j<w*h;j++){px[j*4]=(_h2f(u16hw[j*4])-fmnw)*frw|0;px[j*4+1]=(_h2f(u16hw[j*4+1])-fmnw)*frw|0;px[j*4+2]=(_h2f(u16hw[j*4+2])-fmnw)*frw|0;px[j*4+3]=255;}
           return px;
         }
         // BC1-5 software decode
@@ -1152,8 +1195,8 @@ var decodeWorker = (function(){
     var displayW = w, displayH = h;
     var minDim = Math.min(w, h), maxDim = Math.max(w, h);
     var tinyDim = Math.min(w, h) <= 4;
-    if (minDim > 1024) {
-      var ds = 1024 / minDim;
+    if (maxDim > 1400) {
+      var ds = 1400 / maxDim;
       displayW = Math.round(w * ds); displayH = Math.round(h * ds);
     } else if (maxDim < 540) {
       var us = 540 / maxDim;
