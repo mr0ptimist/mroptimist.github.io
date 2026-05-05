@@ -1,0 +1,157 @@
+{{- define "main" }}
+
+{{- if (and site.Params.profileMode.enabled .IsHome) }}
+{{- partial "index_profile.html" . }}
+{{- else }}
+
+{{- if not .IsHome | and .Title }}
+<header class="page-header">
+  {{- partial "breadcrumbs.html" . }}
+  <h1>{{ .Title }}</h1>
+  {{- if .Description }}
+  <div class="post-description">{{ .Description | markdownify }}</div>
+  {{- end }}
+</header>
+{{- end }}
+
+{{- if .Content }}
+<div class="md-content">
+  {{- if not (.Param "disableAnchoredHeadings") }}
+  {{- partial "anchored_headings.html" .Content -}}
+  {{- else }}{{ .Content }}{{ end }}
+</div>
+{{- end }}
+
+{{- $pages := union .RegularPages .Sections }}
+{{- $paginator := .Paginate $pages }}
+
+{{- if gt $paginator.TotalPages 0 }}
+<div class="sort-bar" style="display:flex;align-items:center;gap:6px;margin-bottom:12px;font-size:13px;color:var(--content);user-select:none">
+  <span style="opacity:0.6">排序：</span>
+  <button class="sort-btn active" data-sort="name" style="padding:2px 10px;border:1px solid var(--border);border-radius:12px;background:var(--theme);color:var(--content);cursor:pointer;font-size:12px">按名称 ↑</button>
+  <button class="sort-btn" data-sort="date" style="padding:2px 10px;border:1px solid var(--border);border-radius:12px;background:var(--theme);color:var(--content);cursor:pointer;font-size:12px">按日期 ↓</button>
+</div>
+{{- end }}
+
+{{- $term := .Data.Term }}
+<div class="local-list">
+{{- range $index, $page := $paginator.Pages }}
+
+{{- $isHidden := .Params.hidden }}
+{{- $class := "post-entry" }}
+
+{{- $user_preferred := or site.Params.disableSpecial1stPost site.Params.homeInfoParams }}
+{{- if (and $.IsHome (eq $paginator.PageNumber 1) (eq $index 0) (not $user_preferred)) }}
+{{- $class = "first-entry" }}
+{{- else if $term }}
+{{- $class = "post-entry tag-entry" }}
+{{- end }}
+
+{{- /* Extract first image before article tag */}}
+{{- $firstImg := findRE `!\[[^\]]*\]\([^)]+\.(dds|exr)\)` .RawContent 1 }}
+{{- $thumbUrl := "" }}
+{{- if $firstImg }}
+  {{- $full := index $firstImg 0 }}
+  {{- $thumb := replaceRE `.*\]\(([^)]+)\).*` "$1" $full }}
+  {{- $thumbUrl = $thumb }}
+  {{- if not (hasPrefix $thumb "/") }}
+    {{- $thumbUrl = printf "%s%s" .RelPermalink $thumb }}
+  {{- end }}
+{{- end }}
+
+<article class="{{ $class }}{{ if $isHidden }} secret-post{{ end }}"
+  {{- if $thumbUrl }} style="display:grid;grid-template-columns:100px 1fr;gap:14px;align-items:center{{ if $isHidden }};display:none{{ end }}"{{ else if $isHidden }} style="display:none"{{ end }}
+  data-sort-date="{{ .Date.Format "2006-01-02" }}"
+  data-sort-title="{{ .Title | plainify }}">
+  {{- $coverHidden := (.Param "cover.hiddenInList") | default (.Param "cover.hidden") | default false }}
+  {{- partial "cover.html" (dict "cxt" . "IsSingle" false "isHidden" $coverHidden) }}
+
+  {{- if $thumbUrl }}
+  <div class="entry-thumb"><img alt="" loading="lazy" src="{{ $thumbUrl }}"></div>
+  {{- end }}
+
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">
+      {{- .Title }}
+      {{- if .Draft }}
+      <span class="entry-hint" title="Draft">
+        <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 -960 960 960" fill="currentColor">
+          <path d="M160-410v-60h300v60H160Zm0-165v-60h470v60H160Zm0-165v-60h470v60H160Zm360 580v-123l221-220q9-9 20-13t22-4q12 0 23 4.5t20 13.5l37 37q9 9 13 20t4 22q0 11-4.5 22.5T862.09-380L643-160H520Zm300-263-37-37 37 37ZM580-220h38l121-122-18-19-19-18-122 121v38Zm141-141-19-18 37 37-18-19Z" />
+        </svg>
+      </span>
+      {{- end }}
+    </h2>
+  </header>
+  <a class="entry-link" aria-label="post link to {{ .Title | plainify }}" href="{{ .RelPermalink }}"></a>
+</article>
+{{- end }}
+</div>
+
+{{- if gt $paginator.TotalPages 1 }}
+<footer class="page-footer">
+  <nav class="pagination">
+    {{- if $paginator.HasPrev }}
+    <a class="prev" href="{{ $paginator.Prev.URL | relURL }}">
+      «&nbsp;{{ i18n "prev_page" }}&nbsp;
+      {{- if (.Param "ShowPageNums") }}
+      {{- sub $paginator.PageNumber 1 }}/{{ $paginator.TotalPages }}
+      {{- end }}
+    </a>
+    {{- end }}
+    {{- if $paginator.HasNext }}
+    <a class="next" href="{{ $paginator.Next.URL | relURL }}">
+      {{- i18n "next_page" }}&nbsp;
+      {{- if (.Param "ShowPageNums") }}
+      {{- add 1 $paginator.PageNumber }}/{{ $paginator.TotalPages }}
+      {{- end }}&nbsp;»
+    </a>
+    {{- end }}
+  </nav>
+</footer>
+{{- end }}
+
+<script>
+(function(){
+  var bar = document.querySelector('.sort-bar');
+  if (!bar) return;
+  var list = bar.parentElement;
+  var btns = bar.querySelectorAll('.sort-btn');
+  var STORAGE_KEY = 'blog_local_sort';
+
+  function getArticles() {
+    return Array.from(list.querySelectorAll('article[data-sort-date]'));
+  }
+
+  function sortAndReorder(mode) {
+    var articles = getArticles();
+    articles.sort(function(a, b) {
+      if (mode === 'name') {
+        return a.dataset.sortTitle.localeCompare(b.dataset.sortTitle);
+      } else {
+        return b.dataset.sortDate.localeCompare(a.dataset.sortDate);
+      }
+    });
+    var ref = bar.nextElementSibling;
+    articles.forEach(function(el) {
+      list.insertBefore(el, ref);
+    });
+  }
+
+  var saved = sessionStorage.getItem(STORAGE_KEY) || 'name';
+  btns.forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.sort === saved);
+    btn.addEventListener('click', function() {
+      var mode = btn.dataset.sort;
+      btns.forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      sessionStorage.setItem(STORAGE_KEY, mode);
+      sortAndReorder(mode);
+    });
+  });
+  if (saved !== 'date') sortAndReorder(saved);
+})();
+</script>
+
+{{- end }}{{/* end profileMode */}}
+
+{{- end }}{{- /* end main */ -}}

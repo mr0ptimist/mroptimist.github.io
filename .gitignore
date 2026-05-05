@@ -4,3 +4,4 @@ resources/
 __pycache__/
 *.pyc
 content/local/
+.idea/
