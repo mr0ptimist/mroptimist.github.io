@@ -188,6 +188,9 @@
     function str4(buf, off) { return String.fromCharCode(r8(buf,off),r8(buf,off+1),r8(buf,off+2),r8(buf,off+3)); }
     function c565(c) { return [((c>>11)&31)*255/31|0, ((c>>5)&63)*255/63|0, (c&31)*255/31|0]; }
     function _h2f(h) { var s=(h>>15)&1,e=(h>>10)&31,m=h&1023; if(e===0)return(s?-1:1)*Math.pow(2,-14)*(m/1024); if(e===31)return m===0?(s?-Infinity:Infinity):NaN; return(s?-1:1)*Math.pow(2,e-15)*(1+m/1024); }
+    // R11G11B10_FLOAT helpers: 11-bit (6e5m) and 10-bit (5e5m)
+    function _h2f_r11g11b10(v) { if(v===0)return 0; var e=(v>>6)&0x1F,m=v&0x3F; if(e===0)return m/64*Math.pow(2,-14); if(e===31)return m?NaN:Infinity; return (1+m/64)*Math.pow(2,e-15); }
+    function _h2f_r10(v) { if(v===0)return 0; var e=(v>>5)&0x1F,m=v&0x1F; if(e===0)return m/32*Math.pow(2,-14); if(e===31)return m?NaN:Infinity; return (1+m/32)*Math.pow(2,e-15); }
 
         // DXGI format reference:
     //   20:D32_FLOAT_S8X24  28:R8G8B8A8_UNORM   29:R8G8B8A8_SRGB
@@ -195,41 +198,92 @@
     //   53:R16_TYPELESS     54:R16_FLOAT          61:R8_UNORM
     //   70-71:BC1  80-81:BC4  83-84:BC5  95-96:BC6H  98-99:BC7
     var DXGI_MAP = {
-      20:'D32S8', 24:'R10G10B10A2', 28:'RGBA8', 29:'RGBA8_sRGB',
-      35:'R16G16', 49:'R8G8', 53:'R16', 54:'R16F', 61:'R8',
-      70:'BC1', 71:'BC1', 74:'BC3', 75:'BC3', 77:'BC3', 78:'BC3',
-      80:'BC4', 81:'BC4', 83:'BC5', 84:'BC5',
-      95:'BC6H', 96:'BC6H', 98:'BC7', 99:'BC7'
+      2:'R32G32B32A32_FLOAT', 6:'R32G32B32_FLOAT',
+      10:'R16G16B16A16_FLOAT', 11:'R16G16B16A16_UNORM',
+      20:'D32_FLOAT_S8X24_UINT', 24:'R10G10B10A2_UNORM', 26:'R11G11B10_FLOAT',
+      27:'R8G8B8A8_TYPELESS', 28:'R8G8B8A8_UNORM', 29:'R8G8B8A8_UNORM_SRGB',
+      34:'R16G16_FLOAT', 35:'R16G16_UNORM', 36:'R16G16_UINT',
+      40:'D32_FLOAT', 41:'R32_FLOAT',
+      49:'R8G8_UNORM',
+      53:'R16_TYPELESS', 54:'R16_FLOAT', 55:'D16_UNORM', 56:'R16_UNORM', 57:'R16_UINT',
+      61:'R8_UNORM', 65:'A8_UNORM',
+      67:'R9G9B9E5_SHAREDEXP',
+      70:'BC1_TYPELESS', 71:'BC1_UNORM', 72:'BC1_UNORM_SRGB',
+      73:'BC2_TYPELESS', 74:'BC2_UNORM', 75:'BC2_UNORM_SRGB',
+      76:'BC3_TYPELESS', 77:'BC3_UNORM', 78:'BC3_UNORM_SRGB',
+      79:'BC4_TYPELESS', 80:'BC4_UNORM', 81:'BC4_SNORM',
+      82:'BC5_TYPELESS', 83:'BC5_UNORM', 84:'BC5_SNORM',
+      94:'BC6H_TYPELESS', 95:'BC6H_UF16', 96:'BC6H_SF16',
+      97:'BC7_TYPELESS', 98:'BC7_UNORM', 99:'BC7_UNORM_SRGB'
     };
 
     // bits-per-pixel for uncompressed DX10 formats (D32S8=64bit per pixel: float32 depth + uint8 stencil + 24b pad)
-    var DXGI_BPP = {20:64, 24:32, 28:32, 29:32, 35:32, 49:16, 53:16, 54:16, 61:8};
+    var DXGI_BPP = {2:128, 6:96, 10:64, 11:64, 20:64, 24:32, 26:32, 27:32, 28:32, 29:32, 34:32, 35:32, 36:32, 40:32, 41:32, 49:16, 53:16, 54:16, 55:16, 56:16, 57:16, 61:8, 65:8, 67:32};
+
+    // Map official DXGI type name to decode family
+    function fmtFamily(type) {
+      if (!type) return '';
+      if (type.startsWith('BC1')) return 'BC1';
+      if (type.startsWith('BC2')||type.startsWith('BC3')) return 'BC3';
+      if (type.startsWith('BC4')) return 'BC4';
+      if (type.startsWith('BC5')) return 'BC5';
+      if (type.startsWith('BC6H')) return 'BC6H';
+      if (type.startsWith('BC7')) return 'BC7';
+      if (type.startsWith('R8G8B8A8')) return 'RGBA8';
+      if (type.startsWith('B8G8R8')) return 'BGRA8';
+      if (type.startsWith('R10G10B10A2')) return 'R10G10B10A2';
+      if (type.startsWith('R11G11B10')) return 'R11G11B10';
+      if (type.startsWith('R16G16B16A16')) return 'RGBA16';
+      if (type.startsWith('R16G16')&&type.indexOf('FLOAT')>=0) return 'R16G16F';
+      if (type.startsWith('R16G16')) return 'R16G16';
+      if (type.startsWith('R8G8')) return 'R8G8';
+      if (type.startsWith('B8G8R8')) return 'BGRA8';
+      if (type.startsWith('R16_FLOAT')) return 'R16F';
+      if ((type.startsWith('R16_')||type.startsWith('D16_'))&&type.indexOf('FLOAT')<0) return 'R16';
+      if (type.startsWith('R8_')||type==='A8_UNORM') return 'R8';
+      if (type.startsWith('R32_FLOAT')||type==='D32_FLOAT') return 'R32F';
+      if (type.startsWith('D32_FLOAT_S8')) return 'D32S8';
+      if (type.startsWith('R9G9B9E5')) return 'RGB9E5';
+      if (type.startsWith('R32G32B32A32')) return 'RGBA128F';
+      if (type.startsWith('R32G32B32')) return 'RGB96F';
+      return type;
+    }
 
     // Detect DDS pixel format from FourCC (DX10 or legacy) or legacy pixel-format masks
     function detectFmt(view) {
       var fourCC = str4(view,84);
       if (fourCC === 'DX10') {
         var dxgi = r32(view,128);
-        return { fourCC:fourCC, dxgi:dxgi, type:DXGI_MAP[dxgi]||('DXGI_'+dxgi), isComp:dxgi>=70, bpp:DXGI_BPP[dxgi]||0 };
+        var t = DXGI_MAP[dxgi]||('DXGI_'+dxgi);
+        return { fourCC:fourCC, dxgi:dxgi, type:t, family:fmtFamily(t), isComp:dxgi>=70, bpp:DXGI_BPP[dxgi]||0 };
       }
-      if (fourCC === 'DXT1') return { fourCC:fourCC, dxgi:71, type:'BC1', isComp:true, bpp:4 };
-      if (fourCC === 'DXT3') return { fourCC:fourCC, dxgi:75, type:'BC3', isComp:true, bpp:8 };
-      if (fourCC === 'DXT5') return { fourCC:fourCC, dxgi:77, type:'BC3', isComp:true, bpp:8 };
-      if (fourCC === 'ATI1') return { fourCC:fourCC, dxgi:80, type:'BC4', isComp:true, bpp:4 };
-      if (fourCC === 'ATI2') return { fourCC:fourCC, dxgi:83, type:'BC5', isComp:true, bpp:8 };
+      if (fourCC === 'DXT1') { var lt='BC1_UNORM'; return { fourCC:fourCC, dxgi:71, type:lt, family:fmtFamily(lt), isComp:true, bpp:(71>=70&&71<=72||71>=80&&71<=81?8:16) }; }
+      if (fourCC === 'DXT3') { var lt='BC2_UNORM'; return { fourCC:fourCC, dxgi:75, type:lt, family:fmtFamily(lt), isComp:true, bpp:(75>=70&&75<=72||75>=80&&75<=81?8:16) }; }
+      if (fourCC === 'DXT5') { var lt='BC3_UNORM'; return { fourCC:fourCC, dxgi:77, type:lt, family:fmtFamily(lt), isComp:true, bpp:(77>=70&&77<=72||77>=80&&77<=81?8:16) }; }
+      if (fourCC === 'ATI1') { var lt='BC4_UNORM'; return { fourCC:fourCC, dxgi:80, type:lt, family:fmtFamily(lt), isComp:true, bpp:(80>=70&&80<=72||80>=80&&80<=81?8:16) }; }
+      if (fourCC === 'ATI2') { var lt='BC5_UNORM'; return { fourCC:fourCC, dxgi:83, type:lt, family:fmtFamily(lt), isComp:true, bpp:(83>=70&&83<=72||83>=80&&83<=81?8:16) }; }
       var bc = r32(view,88), rmask = r32(view,92), gmask = r32(view,96), bmask = r32(view,100), amask = r32(view,104);
       if (bc===32 && rmask===0xFF && gmask===0xFF00 && bmask===0xFF0000 && amask===0xFF000000)
-        return { fourCC:fourCC, dxgi:28, type:'RGBA8', isComp:false, bpp:32 };
+        return { fourCC:fourCC, dxgi:28, type:'R8G8B8A8_UNORM', family:'RGBA8', isComp:false, bpp:32 };
       if (bc===32 && rmask===0x3FF && gmask===0xFFC00 && bmask===0x3FF00000)
-        return { fourCC:fourCC, dxgi:24, type:'R10G10B10A2', isComp:false, bpp:32 };
+        return { fourCC:fourCC, dxgi:24, type:'R10G10B10A2_UNORM', family:'R10G10B10A2', isComp:false, bpp:32 };
       if (bc===32 && (rmask===0xFFFF||rmask===0x0000FFFF) && (gmask===0xFFFF0000||gmask===0xFFFF0000))
-        return { fourCC:fourCC, dxgi:35, type:'R16G16', isComp:false, bpp:32 };
+        return { fourCC:fourCC, dxgi:35, type:'R16G16_UNORM', family:'R16G16', isComp:false, bpp:32 };
       if (bc===16 && rmask===0xFF && gmask===0xFF00)
-        return { fourCC:fourCC, dxgi:49, type:'R8G8', isComp:false, bpp:16 };
+        return { fourCC:fourCC, dxgi:49, type:'R8G8_UNORM', family:'R8G8', isComp:false, bpp:16 };
       if (bc===8 && rmask===0xFF)
-        return { fourCC:fourCC, dxgi:61, type:'R8', isComp:false, bpp:8 };
-      if (bc===32) return { fourCC:fourCC, dxgi:28, type:'RGBA8', isComp:false, bpp:32 };
-      return { fourCC:fourCC, dxgi:0, type:'UNKNOWN', isComp:false, bpp:32 };
+        return { fourCC:fourCC, dxgi:61, type:'R8_UNORM', family:'R8', isComp:false, bpp:8 };
+      // ARGB: A=0xFF, R=0xFF00, G=0xFF0000, B=0xFF000000
+      if (bc===32 && amask===0xFF && rmask===0xFF00 && gmask===0xFF0000 && bmask===0xFF000000)
+        return { fourCC:fourCC, dxgi:87, type:'B8G8R8A8_UNORM', family:'BGRA8', isComp:false, bpp:32, swizzle:'argb' };
+      // BGRA: B=0xFF, G=0xFF00, R=0xFF0000, A=0xFF000000
+      if (bc===32 && bmask===0xFF && gmask===0xFF00 && rmask===0xFF0000 && amask===0xFF000000)
+        return { fourCC:fourCC, dxgi:87, type:'B8G8R8A8_UNORM', family:'BGRA8', isComp:false, bpp:32, swizzle:'bgra' };
+      // ABGR: A=0xFF, B=0xFF00, G=0xFF0000, R=0xFF000000
+      if (bc===32 && amask===0xFF && bmask===0xFF00 && gmask===0xFF0000 && rmask===0xFF000000)
+        return { fourCC:fourCC, dxgi:87, type:'B8G8R8A8_UNORM', family:'BGRA8', isComp:false, bpp:32, swizzle:'abgr' };
+      if (bc===32) return { fourCC:fourCC, dxgi:28, type:'R8G8B8A8_UNORM', family:'RGBA8', isComp:false, bpp:32 };
+      return { fourCC:fourCC, dxgi:28, type:'R8G8B8A8_UNORM', family:'RGBA8', isComp:false, bpp:32 };
     }
 
     // Parse DDS file: header + DX10 extended header, build mip offset table
@@ -239,8 +293,13 @@
       if (str4(view,0) !== 'DDS ') return null;
       var w = r32(view,16), h = r32(view,12), mips, flags = r32(view,8);
       // DDSD_MIPMAPCOUNT (0x20000): only trust header mip count when flag is set
+      // For volume/array textures without the flag, default to 1 (avoid misinterpreting slices as mips)
+      var ddsDepth2 = Math.max(r32(view, 24), 1);
+      var caps2_pre = r32(view, 104);
       if (flags & 0x20000) {
         mips = Math.max(r32(view,28), 1);
+      } else if (ddsDepth2 > 1 || (caps2_pre & (0x200|0x200000))) {
+        mips = 1;
       } else {
         mips = Math.floor(Math.log2(Math.max(w, h))) + 1;
       }
@@ -253,13 +312,16 @@
         dx10Misc = r32(view, 136);
         dx10Array = Math.max(r32(view, 140), 1);
       }
+      // Legacy DDS: read caps2 (offset 104) + depth (offset 24) for cubemap/volume detection
+      var caps2 = caps2_pre;
+      var ddsDepth = ddsDepth2;
 
       var mipOff = dataOff, mipList = [];
       for (var i = 0; i < mips; i++) {
         var mw = Math.max(1, w>>i), mh = Math.max(1, h>>i);
         var size;
         if (fmt.isComp) {
-          var bs = (fmt.type==='BC1'||fmt.type==='BC4') ? 8 : 16;
+          var bs = (fmt.family==='BC1'||fmt.family==='BC4') ? 8 : 16;
           size = Math.max(1,(mw+3)/4|0) * Math.max(1,(mh+3)/4|0) * bs;
         } else {
           size = mw * mh * (fmt.bpp / 8);
@@ -273,9 +335,19 @@
       // Detect array/cubemap: cubemap=6 faces, or DX10 array_size>1, or compute from data size
       var faceByteSize = mipOff - dataOff;
       var arraySize = 1;
-      if (dx10Misc & 0x4) arraySize = 6; // DDS_RESOURCE_MISC_TEXTURECUBE
+      // DX10 cubemap
+      if (dx10Misc & 0x4) arraySize = 6;
+      // DX10 texture array
       else if (dx10Array > 1) arraySize = dx10Array;
-      // Heuristic: if data has more than one face worth, use that count (catches cubemaps where DX10 header arraySize=1)
+      // Legacy cubemap (caps2 DDSCAPS2_CUBEMAP=0x200): count face flags in bits 10-15
+      else if (caps2 & 0x200) {
+        arraySize = 0;
+        for (var bit = 0; bit < 6; bit++) { if (caps2 & (0x400 << bit)) arraySize++; }
+        if (!arraySize) arraySize = 6; // all faces implied
+      }
+      // Volume/3D texture (caps2 flag or dwDepth>1)
+      else if ((caps2 & 0x200000) || ddsDepth > 1) arraySize = ddsDepth;
+      // Heuristic: if data has more than one face worth, use that count
       var totalFaces = Math.floor((buf.byteLength - dataOff) / faceByteSize);
       if (totalFaces > arraySize) arraySize = totalFaces;
       // arraySize can be overridden by JSON sidecar later
@@ -293,12 +365,13 @@
           if (off + m.size > this.raw.byteLength) return null;
           var px = new Uint8ClampedArray(m.w * m.h * 4);
           var data = new Uint8Array(this.raw.buffer, off, m.size);
-          var type = this.fmt.type;
+          var type = this.fmt.type, fam = this.fmt.family;
 
           // -- Compressed formats --
           if (this.fmt.isComp) {
             // BC1-5: software decode on CPU
-            if (type==='BC1'||type==='BC3'||type==='BC4'||type==='BC5')
+            var fam = this.fmt.family;
+            if (fam==='BC1'||fam==='BC3'||fam==='BC4'||fam==='BC5')
               return _decodeBC(data, m.w, m.h, this.fmt);
             var glDec = _decodeBC7_WebGL(data, m.w, m.h, this.fmt);
             if (glDec) return glDec;
@@ -310,14 +383,24 @@
           // -- Uncompressed formats --
 
           // 8-bit RGBA: direct copy (canvas 2D is sRGB, so data displays correctly as-is)
-          if (type==='RGBA8'||type==='RGBA8_sRGB') {
+          if (fam==='RGBA8') {
             for (var j=0;j<px.length;j++) px[j]=data[j];
+            return px;
+          }
+          // ARGB/BGRA/ABGR: swizzle bytes to RGBA
+          if (fam==='BGRA8') {
+            var sw = this.fmt.swizzle || 'bgra';
+            for (var j=0;j<px.length;j+=4) {
+              if (sw==='argb')  { px[j]=data[j+1]; px[j+1]=data[j+2]; px[j+2]=data[j+3]; px[j+3]=data[j]; }
+              else if (sw==='abgr') { px[j]=data[j+3]; px[j+1]=data[j+2]; px[j+2]=data[j+1]; px[j+3]=data[j]; }
+              else { px[j]=data[j+2]; px[j+1]=data[j+1]; px[j+2]=data[j]; px[j+3]=data[j+3]; } // bgra
+            }
             return px;
           }
           // 10/10/10/2 packed in uint32: R=[0:9], G=[10:19], B=[20:29], A=[30:31]
           // Normalize: 10-bit / 1023, 2-bit / 3
-          if (type==='R10G10B10A2') {
-            var src32 = new Uint32Array(this.raw.buffer, m.off, m.w*m.h);
+          if (fam==='R10G10B10A2') {
+            var src32 = new Uint32Array(this.raw.buffer, off, m.w*m.h);
             for (var j=0;j<m.w*m.h;j++) {
               var p = src32[j];
               px[j*4]   = (p & 0x3FF) * 255 / 1023 | 0;
@@ -328,21 +411,39 @@
             return px;
           }
           // 2×8-bit, no blue/alpha: R->R, G->G, B=0, A=255
-          if (type==='R8G8') {
+          // R11G11B10_FLOAT: 32-bit packed, 11+11+10 bits, float-like (6e5m / 6e5m / 5e5m)
+      if (fam==='R11G11B10') {
+        var src32 = new Uint32Array(this.raw.buffer, off, m.w*m.h);
+        for (var j=0;j<m.w*m.h;j++) {
+          var p = src32[j];
+          // R: bits 0-10 (11 bits: 5-bit mantissa + 6-bit exponent)
+          var r = _h2f_r11g11b10(p & 0x7FF);
+          // G: bits 11-21 (11 bits)
+          var g = _h2f_r11g11b10((p >>> 11) & 0x7FF);
+          // B: bits 22-31 (10 bits: 5-bit mantissa + 5-bit exponent)
+          var b = _h2f_r10((p >>> 22) & 0x3FF);
+          px[j*4]=Math.min(255,Math.max(0,r*255|0));
+          px[j*4+1]=Math.min(255,Math.max(0,g*255|0));
+          px[j*4+2]=Math.min(255,Math.max(0,b*255|0));
+          px[j*4+3]=255;
+        }
+        return px;
+      }
+      if (fam==='R8G8') {
             for (var j=0;j<m.w*m.h;j++) {
               px[j*4]=data[j*2]; px[j*4+1]=data[j*2+1]; px[j*4+2]=0; px[j*4+3]=255;
             }
             return px;
           }
           // Single 8-bit channel → grayscale
-          if (type==='R8') {
+          if (fam==='R8') {
             for (var j=0;j<m.w*m.h;j++) {
               var v=data[j]; px[j*4]=v; px[j*4+1]=v; px[j*4+2]=v; px[j*4+3]=255;
             }
             return px;
           }
           // 2×16-bit UNORM: normalize 0..65535 → 0..255. Use float32 to avoid uint16 overflow!
-          if (type==='R16G16') {
+          if (fam==='R16G16') {
             var src16 = new Uint16Array(this.raw.buffer, m.off, m.w*m.h*2);
             for (var j=0;j<m.w*m.h;j++) {
               px[j*4]   = src16[j*2] * 255 / 65535 | 0;
@@ -352,7 +453,7 @@
             return px;
           }
           // 16-bit uint: auto-level stretch
-          if (type==='R16') {
+          if (fam==='R16') {
             var su16 = new Uint16Array(this.raw.buffer, m.off, m.w*m.h);
             var vmin=65535, vmax=0;
             for (var j=0;j<su16.length;j++) { if(su16[j]<vmin)vmin=su16[j]; if(su16[j]>vmax)vmax=su16[j]; }
@@ -364,7 +465,7 @@
             return px;
           }
           // 16-bit half-float: convert to float32 first, then auto-level stretch
-          if (type==='R16F') {
+          if (fam==='R16F') {
             var su16 = new Uint16Array(this.raw.buffer, m.off, m.w*m.h);
             var fmin=1e9, fmax=-1e9;
             for (var j=0;j<su16.length;j++) {
@@ -379,7 +480,7 @@
             return px;
           }
           // D32_FLOAT_S8X24: 8 bytes/pixel. Even float32 indices = depth, odd = stencil padding (skip!)
-          if (type==='D32S8') {
+          if (fam==='D32S8') {
             var allF = new Float32Array(this.raw.buffer, m.off, m.w*m.h*2);
             var dmin=1e9, dmax=-1e9, n=m.w*m.h;
             for (var j=0;j<n;j++) { var dv=allF[j*2]; if(isFinite(dv)){if(dv<dmin)dmin=dv;if(dv>dmax)dmax=dv;} }
@@ -484,8 +585,8 @@
       var ext = gl.getExtension('EXT_texture_compression_bptc');
       if (!ext) return null;
       var internalFmt;
-      if (fmt.type==='BC7') internalFmt = (fmt.dxgi===99) ? ext.COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT : ext.COMPRESSED_RGBA_BPTC_UNORM_EXT;
-      else if (fmt.type==='BC6H') internalFmt = (fmt.dxgi===96) ? ext.COMPRESSED_RGB_BPTC_SIGNED_FLOAT_EXT : ext.COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_EXT;
+      if (fmt.family==='BC7') internalFmt = (fmt.dxgi===99) ? ext.COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT : ext.COMPRESSED_RGBA_BPTC_UNORM_EXT;
+      else if (fmt.family==='BC6H') internalFmt = (fmt.dxgi===96) ? ext.COMPRESSED_RGB_BPTC_SIGNED_FLOAT_EXT : ext.COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_EXT;
       else return null;
       var copy = new Uint8Array(data);
       // Lazily init shader program (cached on gl context)
@@ -625,17 +726,22 @@
           var row = y - dataWindow[1];
           var srcOff = pos;
           for (var c = 0; c < chList.length && c < 4; c++) {
-            for (var x = 0; x < w && srcOff + chList[c].bpp <= pos + scanSize; x++) {
-              var dstOff = (row * w + x) * 4;
-              if (chList[c].type === 2) { // FLOAT
-                pixels[dstOff + chList[c].idx] = new Float32Array(view.buffer.slice(srcOff, srcOff+4))[0];
-                srcOff += 4;
-              } else if (chList[c].type === 1) { // HALF
+            if (chList[c].type === 2) { // FLOAT: batch read per scanline
+              var rowFloats = new Float32Array(view.buffer.slice(srcOff, srcOff + w * 4));
+              for (var x = 0; x < w && x < rowFloats.length; x++) {
+                pixels[(row * w + x) * 4 + chList[c].idx] = rowFloats[x];
+              }
+              srcOff += w * 4;
+            } else {
+              for (var x = 0; x < w && srcOff + chList[c].bpp <= pos + scanSize; x++) {
+                var dstOff = (row * w + x) * 4;
+                if (chList[c].type === 1) { // HALF
                 var hf = (view[srcOff])|(view[srcOff+1]<<8);
                 pixels[dstOff + chList[c].idx] = halfToFloat(hf);
-                srcOff += 2;
-              } else {
-                srcOff += chList[c].bpp;
+                  srcOff += 2;
+                } else {
+                  srcOff += chList[c].bpp;
+                }
               }
             }
           }
@@ -710,25 +816,30 @@ var decodeWorker = (function(){
       function str4(b,o){return String.fromCharCode(r8(b,o),r8(b,o+1),r8(b,o+2),r8(b,o+3));}
       function c565(c){return [((c>>11)&31)*255/31|0, ((c>>5)&63)*255/63|0, (c&31)*255/31|0];}
       function _h2f(h){var s=(h>>15)&1,e=(h>>10)&31,m=h&1023;if(e===0)return(s?-1:1)*Math.pow(2,-14)*(m/1024);if(e===31)return m===0?(s?-Infinity:Infinity):NaN;return(s?-1:1)*Math.pow(2,e-15)*(1+m/1024);}
-      var DXGI_MAP={20:'D32S8',24:'R10G10B10A2',28:'RGBA8',29:'RGBA8_sRGB',35:'R16G16',49:'R8G8',53:'R16',54:'R16F',61:'R8',70:'BC1',71:'BC1',74:'BC3',75:'BC3',77:'BC3',78:'BC3',80:'BC4',81:'BC4',83:'BC5',84:'BC5',95:'BC6H',96:'BC6H',98:'BC7',99:'BC7'};
-      var DXGI_BPP={20:32,24:32,28:32,29:32,35:32,49:16,53:16,54:16,61:8};
+      function _h2f_r11g11b10(v){if(v===0)return 0;var e=(v>>6)&0x1F,m=v&0x3F;if(e===0)return m/64*Math.pow(2,-14);if(e===31)return m?NaN:Infinity;return (1+m/64)*Math.pow(2,e-15);}
+      function _h2f_r10(v){if(v===0)return 0;var e=(v>>5)&0x1F,m=v&0x1F;if(e===0)return m/32*Math.pow(2,-14);if(e===31)return m?NaN:Infinity;return (1+m/32)*Math.pow(2,e-15);}
+      var DXGI_MAP={2:'R32G32B32A32_FLOAT',6:'R32G32B32_FLOAT',10:'R16G16B16A16_FLOAT',11:'R16G16B16A16_UNORM',20:'D32_FLOAT_S8X24_UINT',24:'R10G10B10A2_UNORM',26:'R11G11B10_FLOAT',27:'R8G8B8A8_TYPELESS',28:'R8G8B8A8_UNORM',29:'R8G8B8A8_UNORM_SRGB',34:'R16G16_FLOAT',35:'R16G16_UNORM',36:'R16G16_UINT',40:'D32_FLOAT',41:'R32_FLOAT',49:'R8G8_UNORM',53:'R16_TYPELESS',54:'R16_FLOAT',55:'D16_UNORM',56:'R16_UNORM',57:'R16_UINT',61:'R8_UNORM',65:'A8_UNORM',67:'R9G9B9E5_SHAREDEXP',70:'BC1_TYPELESS',71:'BC1_UNORM',72:'BC1_UNORM_SRGB',73:'BC2_TYPELESS',74:'BC2_UNORM',75:'BC2_UNORM_SRGB',76:'BC3_TYPELESS',77:'BC3_UNORM',78:'BC3_UNORM_SRGB',79:'BC4_TYPELESS',80:'BC4_UNORM',81:'BC4_SNORM',82:'BC5_TYPELESS',83:'BC5_UNORM',84:'BC5_SNORM',94:'BC6H_TYPELESS',95:'BC6H_UF16',96:'BC6H_SF16',97:'BC7_TYPELESS',98:'BC7_UNORM',99:'BC7_UNORM_SRGB'};
+      var DXGI_BPP={2:128,6:96,10:64,11:64,20:32,24:32,26:32,27:32,28:32,29:32,34:32,35:32,36:32,40:32,41:32,49:16,53:16,54:16,55:16,56:16,57:16,61:8,65:8,67:32};
 
       function detectFmt(view){
         var fc=str4(view,84);
-        if(fc==='DX10'){var d=r32(view,128);return {fc:fc,dx:d,type:DXGI_MAP[d]||('DXGI_'+d),comp:d>=70,bpp:DXGI_BPP[d]||0};}
-        if(fc==='DXT1')return{fc:fc,dx:71,type:'BC1',comp:true,bpp:4};
-        if(fc==='DXT3')return{fc:fc,dx:75,type:'BC3',comp:true,bpp:8};
-        if(fc==='DXT5')return{fc:fc,dx:77,type:'BC3',comp:true,bpp:8};
-        if(fc==='ATI1')return{fc:fc,dx:80,type:'BC4',comp:true,bpp:4};
-        if(fc==='ATI2')return{fc:fc,dx:83,type:'BC5',comp:true,bpp:8};
+        if(fc==='DX10'){var d=r32(view,128),wt=DXGI_MAP[d]||('DXGI_'+d);return {fc:fc,dx:d,type:wt,family:function(t){if(!t)return'';if(t.startsWith('BC1'))return'BC1';if(t.startsWith('BC2')||t.startsWith('BC3'))return'BC3';if(t.startsWith('BC4'))return'BC4';if(t.startsWith('BC5'))return'BC5';if(t.startsWith('BC6H'))return'BC6H';if(t.startsWith('BC7'))return'BC7';if(t.startsWith('R8G8B8A8'))return'RGBA8';if(t.startsWith('B8G8R8'))return'BGRA8';if(t.startsWith('R10G10B10A2'))return'R10G10B10A2';if(t.startsWith('R11G11B10'))return'R11G11B10';if(t.startsWith('R16G16B16A16'))return'RGBA16';if(t.startsWith('R16G16')&&t.indexOf('FLOAT')>=0)return'R16G16F';if(t.startsWith('R16G16'))return'R16G16';if(t.startsWith('R8G8'))return'R8G8';if(t.startsWith('R16_FLOAT'))return'R16F';if((t.startsWith('R16_')||t.startsWith('D16_'))&&t.indexOf('FLOAT')<0)return'R16';if(t.startsWith('R8_')||t==='A8_UNORM')return'R8';if(t.startsWith('R32_FLOAT')||t==='D32_FLOAT')return'R32F';if(t.startsWith('D32_FLOAT_S8'))return'D32S8';if(t.startsWith('R9G9B9E5'))return'RGB9E5';if(t.startsWith('R32G32B32A32'))return'RGBA128F';if(t.startsWith('R32G32B32'))return'RGB96F';return t;}(wt),comp:d>=70,bpp:DXGI_BPP[d]||0};}
+        if(fc==='DXT1')return{fc:fc,dx:71,type:'BC1_UNORM',family:'BC1',comp:true,bpp:4};
+        if(fc==='DXT3')return{fc:fc,dx:75,type:'BC2_UNORM',family:'BC3',comp:true,bpp:8};
+        if(fc==='DXT5')return{fc:fc,dx:77,type:'BC3_UNORM',family:'BC3',comp:true,bpp:8};
+        if(fc==='ATI1')return{fc:fc,dx:80,type:'BC4_UNORM',family:'BC4',comp:true,bpp:4};
+        if(fc==='ATI2')return{fc:fc,dx:83,type:'BC5_UNORM',family:'BC5',comp:true,bpp:8};
         var bc=r32(view,88),rm=r32(view,92),gm=r32(view,96),bm=r32(view,100),am=r32(view,104);
-        if(bc===32&&rm===0xFF&&gm===0xFF00&&bm===0xFF0000&&am===0xFF000000)return{fc:fc,dx:28,type:'RGBA8',comp:false,bpp:32};
-        if(bc===32&&rm===0x3FF&&gm===0xFFC00&&bm===0x3FF00000)return{fc:fc,dx:24,type:'R10G10B10A2',comp:false,bpp:32};
-        if(bc===32&&(rm===0xFFFF||rm===0x0000FFFF)&&(gm===0xFFFF0000||gm===0xFFFF0000))return{fc:fc,dx:35,type:'R16G16',comp:false,bpp:32};
-        if(bc===16&&rm===0xFF&&gm===0xFF00)return{fc:fc,dx:49,type:'R8G8',comp:false,bpp:16};
-        if(bc===8&&rm===0xFF)return{fc:fc,dx:61,type:'R8',comp:false,bpp:8};
-        if(bc===32)return{fc:fc,dx:28,type:'RGBA8',comp:false,bpp:32};
-        return{fc:fc,dx:0,type:'UNKNOWN',comp:false,bpp:32};
+        if(bc===32&&rm===0xFF&&gm===0xFF00&&bm===0xFF0000&&am===0xFF000000)return{fc:fc,dx:28,type:'R8G8B8A8_UNORM',family:'RGBA8',comp:false,bpp:32};
+        if(bc===32&&rm===0x3FF&&gm===0xFFC00&&bm===0x3FF00000)return{fc:fc,dx:24,type:'R10G10B10A2_UNORM',family:'R10G10B10A2',comp:false,bpp:32};
+        if(bc===32&&(rm===0xFFFF||rm===0x0000FFFF)&&(gm===0xFFFF0000||gm===0xFFFF0000))return{fc:fc,dx:35,type:'R16G16_UNORM',family:'R16G16',comp:false,bpp:32};
+        if(bc===16&&rm===0xFF&&gm===0xFF00)return{fc:fc,dx:49,type:'R8G8_UNORM',family:'R8G8',comp:false,bpp:16};
+        if(bc===8&&rm===0xFF)return{fc:fc,dx:61,type:'R8_UNORM',family:'R8',comp:false,bpp:8};
+        if(bc===32&&am===0xFF&&rm===0xFF00&&gm===0xFF0000&&bm===0xFF000000)return{fc:fc,dx:87,type:'B8G8R8A8_UNORM',family:'BGRA8',comp:false,bpp:32,swizzle:'argb'};
+        if(bc===32&&bm===0xFF&&gm===0xFF00&&rm===0xFF0000&&am===0xFF000000)return{fc:fc,dx:87,type:'B8G8R8A8_UNORM',family:'BGRA8',comp:false,bpp:32,swizzle:'bgra'};
+        if(bc===32&&am===0xFF&&bm===0xFF00&&gm===0xFF0000&&rm===0xFF000000)return{fc:fc,dx:87,type:'B8G8R8A8_UNORM',family:'BGRA8',comp:false,bpp:32,swizzle:'abgr'};
+        if(bc===32)return{fc:fc,dx:28,type:'R8G8B8A8_UNORM',family:'RGBA8',comp:false,bpp:32};
+        return{fc:fc,dx:28,type:'RGBA8',comp:false,bpp:32};
       }
 
       function parse(buf){
@@ -738,29 +849,36 @@ var decodeWorker = (function(){
         var fmt=detectFmt(view);
         var dataOff=fmt.fc==='DX10'?148:128;
         var mip0_size;
-        if(fmt.comp){var bs=(fmt.type==='BC1'||fmt.type==='BC4')?8:16;mip0_size=Math.max(1,(w+3)/4|0)*Math.max(1,(h+3)/4|0)*bs;}
+        if(fmt.comp){var bs=(fmt.family==='BC1'||fmt.family==='BC4')?8:16;mip0_size=Math.max(1,(w+3)/4|0)*Math.max(1,(h+3)/4|0)*bs;}
         else{mip0_size=w*h*(fmt.bpp/8);}
         var mip0_data=new Uint8Array(buf,dataOff,mip0_size);
         return {w:w,h:h,fmt:fmt,data:mip0_data};
       }
 
       function decode(dds){
-        var w=dds.w,h=dds.h,data=dds.data,type=dds.fmt.type;
+        var w=dds.w,h=dds.h,data=dds.data,type=dds.fmt.type,fam=dds.fmt.family;
         var px=new Uint8ClampedArray(w*h*4);
-        if(type==='RGBA8'||type==='RGBA8_sRGB'){for(var j=0;j<px.length;j++)px[j]=data[j];return px;}
-        if(type==='R10G10B10A2'){
+        if(fam==='RGBA8'){for(var j=0;j<px.length;j++)px[j]=data[j];return px;}
+        if(fam==='BGRA8'){var sw2=dds.fmt.swizzle||'bgra';for(var j=0;j<px.length;j+=4){if(sw2==='argb'){px[j]=data[j+1];px[j+1]=data[j+2];px[j+2]=data[j+3];px[j+3]=data[j];}else if(sw2==='abgr'){px[j]=data[j+3];px[j+1]=data[j+2];px[j+2]=data[j+1];px[j+3]=data[j];}else{px[j]=data[j+2];px[j+1]=data[j+1];px[j+2]=data[j];px[j+3]=data[j+3];}}return px;}
+        if(fam==='R10G10B10A2'){
           var s32=new Uint32Array(data.buffer,data.byteOffset,w*h);
           for(var j=0;j<w*h;j++){var p=s32[j];px[j*4]=(p&0x3FF)*255/1023|0;px[j*4+1]=((p>>>10)&0x3FF)*255/1023|0;px[j*4+2]=((p>>>20)&0x3FF)*255/1023|0;px[j*4+3]=(p>>>30)*255/3|0;}
           return px;
         }
-        if(type==='R8G8'){for(var j=0;j<w*h;j++){px[j*4]=data[j*2];px[j*4+1]=data[j*2+1];px[j*4+2]=0;px[j*4+3]=255;}return px;}
-        if(type==='R8'){for(var j=0;j<w*h;j++){var v=data[j];px[j*4]=v;px[j*4+1]=v;px[j*4+2]=v;px[j*4+3]=255;}return px;}
-        if(type==='R16G16'){
+        if(fam==='R11G11B10'){
+        var s32b=new Uint32Array(data.buffer,data.byteOffset,w*h);
+        for(var j=0;j<w*h;j++){var p=s32b[j];
+          var r=_h2f_r11g11b10(p&0x7FF),g=_h2f_r11g11b10((p>>>11)&0x7FF),b=_h2f_r10((p>>>22)&0x3FF);
+          px[j*4]=Math.min(255,Math.max(0,r*255|0));px[j*4+1]=Math.min(255,Math.max(0,g*255|0));px[j*4+2]=Math.min(255,Math.max(0,b*255|0));px[j*4+3]=255;
+        }return px;}
+      if(fam==='R8G8'){for(var j=0;j<w*h;j++){px[j*4]=data[j*2];px[j*4+1]=data[j*2+1];px[j*4+2]=0;px[j*4+3]=255;}return px;}
+        if(fam==='R8'){for(var j=0;j<w*h;j++){var v=data[j];px[j*4]=v;px[j*4+1]=v;px[j*4+2]=v;px[j*4+3]=255;}return px;}
+        if(fam==='R16G16'){
           var s16=new Uint16Array(data.buffer,data.byteOffset,w*h*2);
           for(var j=0;j<w*h;j++){px[j*4]=s16[j*2]*255/65535|0;px[j*4+1]=s16[j*2+1]*255/65535|0;px[j*4+2]=0;px[j*4+3]=255;}
           return px;
         }
-        if(type==='R16'){
+        if(fam==='R16'){
           var su=new Uint16Array(data.buffer,data.byteOffset,w*h);
           var mn=65535,mx=0;
           for(var j=0;j<su.length;j++){if(su[j]<mn)mn=su[j];if(su[j]>mx)mx=su[j];}
@@ -768,7 +886,7 @@ var decodeWorker = (function(){
           for(var j=0;j<w*h;j++){var vv=(su[j]-mn)*rng|0;px[j*4]=vv;px[j*4+1]=vv;px[j*4+2]=vv;px[j*4+3]=255;}
           return px;
         }
-        if(type==='R16F'){
+        if(fam==='R16F'){
           var su=new Uint16Array(data.buffer,data.byteOffset,w*h);
           var fmn=1e9,fmx=-1e9;
           for(var j=0;j<su.length;j++){var f=_h2f(su[j]);if(isFinite(f)){if(f<fmn)fmn=f;if(f>fmx)fmx=f;}}
@@ -776,7 +894,7 @@ var decodeWorker = (function(){
           for(var j=0;j<w*h;j++){var vv=(_h2f(su[j])-fmn)*fr|0;px[j*4]=vv;px[j*4+1]=vv;px[j*4+2]=vv;px[j*4+3]=255;}
           return px;
         }
-        if(type==='D32S8'){
+        if(fam==='D32S8'){
           var allF=new Float32Array(data.buffer,data.byteOffset,w*h*2);
           var dmn=1e9,dmx=-1e9,n=w*h;
           for(var j=0;j<n;j++){var dv=allF[j*2];if(isFinite(dv)){if(dv<dmn)dmn=dv;if(dv>dmx)dmx=dv;}}
@@ -785,7 +903,7 @@ var decodeWorker = (function(){
           return px;
         }
         // BC1-5 software decode
-        if(type==='BC1'||type==='BC3'||type==='BC4'||type==='BC5'){
+        if(fam==='BC1'||fam==='BC3'||fam==='BC4'||fam==='BC5'){
           var out=new Uint8ClampedArray(w*h*4);
           var nbw=Math.max(1,(w+3)/4|0),nbh=Math.max(1,(h+3)/4|0);
           var dx=dds.fmt.dx,fc=dds.fmt.fc;
@@ -902,12 +1020,8 @@ var decodeWorker = (function(){
           if(y>=dataWindow[1]&&y<=dataWindow[3]){
             var row=y-dataWindow[1],so=pos;
             for(var c=0;c<chList.length&&c<4;c++){
-              for(var x=0;x<w&&so+chList[c].bpp<=pos+sz2;x++){
-                var dstO=(row*w+x)*4;
-                if(chList[c].type===2){pixels[dstO+chList[c].idx]=(new Float32Array(view.buffer.slice(so,so+4)))[0];so+=4;}
-                else if(chList[c].type===1){var hf=(view[so])|(view[so+1]<<8);pixels[dstO+chList[c].idx]=_h2f(hf);so+=2;}
-                else{so+=chList[c].bpp;}
-              }
+              if(chList[c].type===2){var rf=new Float32Array(view.buffer.slice(so,so+w*4));for(var x=0;x<w&&x<rf.length;x++){pixels[(row*w+x)*4+chList[c].idx]=rf[x];}so+=w*4;}
+              else{for(var x=0;x<w&&so+chList[c].bpp<=pos+sz2;x++){var dstO=(row*w+x)*4;if(chList[c].type===1){var hf=(view[so])|(view[so+1]<<8);pixels[dstO+chList[c].idx]=_h2f(hf);so+=2;}else{so+=chList[c].bpp;}}}
             }
             found++;
           }
@@ -938,6 +1052,7 @@ var decodeWorker = (function(){
       if (msg.type === 'dds') {
         var dds = DDS_WORKER.parse(msg.buffer);
         if (dds) {
+          if (msg.typeOverride) dds.fmt.type = msg.typeOverride;
           var px = DDS_WORKER.decode(dds);
           if (px) result = {w:dds.w, h:dds.h, pixels:px};
         }
@@ -957,21 +1072,31 @@ var decodeWorker = (function(){
   }.toString() + ')()';
 
   var blob = new Blob([code], {type:'application/javascript'});
-  var worker = new Worker(URL.createObjectURL(blob));
+  var NUM_WORKERS = 4;
+  var workers = [];
   var callbacks = {};
   var nextId = 0;
+  var nextWorker = 0;
 
-  worker.onmessage = function(e){
-    var cb = callbacks[e.data.id];
-    if (cb) { delete callbacks[e.data.id]; cb(e.data); }
-  };
+  for (var i = 0; i < NUM_WORKERS; i++) {
+    var w = new Worker(URL.createObjectURL(blob));
+    w.onmessage = function(e) {
+      var cb = callbacks[e.data.id];
+      if (cb) { delete callbacks[e.data.id]; cb(e.data); }
+    };
+    workers.push(w);
+  }
 
   return {
-    decode: function(type, buffer, callback) {
+    decode: function(type, buffer, callback, transfer, typeOverride) {
       var id = ++nextId;
       callbacks[id] = callback;
-      // Clone (not transfer) so main thread's ddsCache keeps a valid buffer for getMip()
-      worker.postMessage({id:id, type:type, buffer:buffer});
+      var w = workers[nextWorker % NUM_WORKERS];
+      nextWorker++;
+      var msg = {id:id, type:type, buffer:buffer};
+      if (typeOverride) msg.typeOverride = typeOverride;
+      if (transfer) w.postMessage(msg, [buffer]);
+      else w.postMessage(msg);
     }
   };
 })();
@@ -983,6 +1108,7 @@ var decodeWorker = (function(){
   var ddsCache = new Map();
   var exrCache = new Map();  // url -> {dds, mip0data}
   var pxCache = new Map();   // url -> Uint8ClampedArray (straight pixel data for non-DDS)
+  var jsonCache = new Map(); // url -> JSON sidecar data (parallel fetch)
 
   // Fast pixel read via Canvas 2D (avoids WebGL round-trip)
   // Fast pixel read via Canvas 2D (avoids WebGL upload/readPixels round-trip)
@@ -991,6 +1117,26 @@ var decodeWorker = (function(){
     var ctx = cv.getContext('2d');
     ctx.drawImage(img, 0, 0);
     return ctx.getImageData(0, 0, w, h).data;
+  }
+
+  // Channel map from DXGI format code (DDS header, no JSON needed)
+  var DXGI_CHANNELS = {
+    2:'RGBA', 6:'RGB', 10:'RGBA', 11:'RGBA',
+    20:'R', 24:'RGBA', 26:'RGB', 27:'RGBA', 28:'RGBA', 29:'RGBA', 87:'RGBA',
+    34:'RG', 35:'RG', 36:'RG',
+    40:'R', 41:'R',
+    49:'RG',
+    53:'R', 54:'R', 55:'R', 56:'R', 57:'R',
+    61:'R', 65:'R', 67:'RGB',
+    70:'RGB', 71:'RGB', 72:'RGB',
+    73:'RGBA', 74:'RGBA', 75:'RGBA', 76:'RGBA', 77:'RGBA', 78:'RGBA', 79:'RGBA',
+    80:'R', 81:'R', 82:'RG', 83:'RG', 84:'RG',
+    94:'RGB', 95:'RGB', 96:'RGB',
+    97:'RGBA', 98:'RGBA', 99:'RGBA'
+  };
+  function chMapFromDxgi(dxgi) {
+    var ch = DXGI_CHANNELS[dxgi] || '';
+    return {R:ch.indexOf('R')>=0, G:ch.indexOf('G')>=0, B:ch.indexOf('B')>=0, A:ch.indexOf('A')>=0};
   }
 
   // ====== Process single image ======
@@ -1005,7 +1151,7 @@ var decodeWorker = (function(){
     // Scale down large images (min(w,h) > 1024), scale up tiny ones (max(w,h) < 540)
     var displayW = w, displayH = h;
     var minDim = Math.min(w, h), maxDim = Math.max(w, h);
-    var isLUT = /lut|ramp/i.test(img.src);
+    var tinyDim = Math.min(w, h) <= 4;
     if (minDim > 1024) {
       var ds = 1024 / minDim;
       displayW = Math.round(w * ds); displayH = Math.round(h * ds);
@@ -1014,8 +1160,8 @@ var decodeWorker = (function(){
       displayW = Math.round(w * us); displayH = Math.round(h * us);
       wrapper.classList.add('channel-small');
     }
-    // LUT/ramp textures: ensure minimum display dimension >= 20px (stretch only the short side)
-    if (isLUT) {
+    // Stretch textures with a 1px or 4px dimension to at least 20px display
+    if (tinyDim) {
       if (displayW < 20) displayW = 20;
       if (displayH < 20) displayH = 20;
     }
@@ -1089,9 +1235,9 @@ var decodeWorker = (function(){
       var cv = document.createElement('canvas');
       cv.className = 'channel-canvas'; cv.width = w; cv.height = h;
       cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(straight), w, h), 0, 0);
-      if (displayW !== w || displayH !== h || isLUT) {
+      if (displayW !== w || displayH !== h) {
         cv.style.width = displayW + 'px';
-        if (isLUT) cv.style.height = displayH + 'px';
+        if (tinyDim) cv.style.height = displayH + 'px';
       }
       var parent = img.parentNode;
       if (parent.tagName === 'P') {
@@ -1116,33 +1262,118 @@ var decodeWorker = (function(){
     }
     wrapper.appendChild(tb);
 
-    // Fetch RenderDoc JSON sidecar for metadata overlay + auto-detect channels + MIP slider
-    var jsonUrl = img.src.replace(/\.[^.]+$/, '.json');
-    fetch(jsonUrl).then(function(r) { if (!r.ok) return; return r.json(); }).then(function(data) {
-      if (!data) return;
-      var rd = data.renderdoc || {}, ai = data.ai || {};
-      // Parse format string (e.g. "R10G10B10A2_UNORM") to determine which channels exist
-      var chMap = {R:false,G:false,B:false,A:false};
-      if (rd.format) {
-        var fmt = rd.format.toUpperCase();
-        if (fmt.startsWith('D')) { chMap.R = true; }
-        // BCn compressed formats — map to known channels per block type
-        else if (fmt.startsWith('BC1')) { chMap.R = true; chMap.G = true; chMap.B = true; }
-        else if (fmt.startsWith('BC2') || fmt.startsWith('BC3') || fmt.startsWith('BC7')) { chMap.R = true; chMap.G = true; chMap.B = true; chMap.A = true; }
-        else if (fmt.startsWith('BC4')) { chMap.R = true; }
-        else if (fmt.startsWith('BC5')) { chMap.R = true; chMap.G = true; }
-        else if (fmt.startsWith('BC6H')) { chMap.R = true; chMap.G = true; chMap.B = true; }
-        else { var m = fmt.match(/^([A-Z]\d+(?:[A-Z]\d+)*)/); if (m) { var re = /[RGBA]/g; var cc; while ((cc = re.exec(m[1])) !== null) chMap[cc[0]] = true; } }
+    // Pixel inspector: short right-click = pinned popup, long+drag = floating popup
+    var pxPinnedList = [];
+    var pxFloat = document.createElement('div');
+    pxFloat.style.cssText = 'display:none;position:fixed;z-index:999;background:rgba(0,0,0,0.85);color:#e8eaed;font-size:11px;padding:4px 8px;border-radius:3px;pointer-events:none;white-space:nowrap;font-family:monospace';
+    document.body.appendChild(pxFloat);
+    var pxTracking = false;
+    var _img = img; // outer processImage img param (DDS img may be outside wrapper)
+    function readPixel(e, el) {
+      var cv = wrapper.querySelector('canvas');
+      var wImg = wrapper.querySelector('img');
+      var src = cv || wImg; if (!src) return null;
+      var rect = src.getBoundingClientRect();
+      var sx = src.width / rect.width;
+      var sy = src.height / rect.height;
+      var px = Math.floor((e.clientX - rect.left) * sx);
+      var py = Math.floor((e.clientY - rect.top) * sy);
+      var ctx = (cv || document.createElement('canvas')).getContext('2d');
+      if (!ctx) return null;
+      if (wImg && !cv) { ctx.canvas.width = wImg.naturalWidth; ctx.canvas.height = wImg.naturalHeight; ctx.drawImage(wImg, 0, 0); }
+      try {
+        var d = ctx.getImageData(Math.min(px, src.width-1), Math.min(py, src.height-1), 1, 1).data;
+        // Determine float vs integer display from format
+        var isFloat = false;
+        var ddsC = ddsCache.get(_img.src);
+        var exrC = exrCache.get(_img.src);
+        if (ddsC && ddsC.dds) {
+          var fam = ddsC.dds.fmt.family;
+          isFloat = fam==='R16F'||fam==='R32F'||fam==='BC6H'||fam==='R11G11B10'||fam==='R16G16F'||fam==='RGB9E5'||fam==='RGBA128F'||fam==='RGB96F'||fam==='RGBA64F';
+        } else if (exrC) {
+          isFloat = true;
+        }
+        var txt;
+        if (isFloat) {
+          txt = 'R:' + (d[0]/255).toFixed(3) + ' G:' + (d[1]/255).toFixed(3) + ' B:' + (d[2]/255).toFixed(3) + ' A:' + (d[3]/255).toFixed(3) + ' @' + px + ',' + py;
+        } else {
+          txt = 'R:' + d[0] + ' G:' + d[1] + ' B:' + d[2] + ' A:' + d[3] + ' @' + px + ',' + py;
+        }
+        el.textContent = txt; el.style.display = 'block';
+        el.style.left = (e.clientX + 12) + 'px';
+        el.style.top = (e.clientY - 10) + 'px';
+        return txt;
+      } catch(ex) { return null; }
+    }
+    function makePxPin(x, y, txt) {
+      var pin = document.createElement('div');
+      pin.style.cssText = 'position:fixed;z-index:998;background:rgba(0,0,0,0.82);color:#8ab4f8;font-size:11px;padding:3px 7px;border-radius:3px;border:1px solid rgba(74,158,255,0.3);pointer-events:none;white-space:nowrap;font-family:monospace';
+      pin.textContent = txt;
+      pin.style.left = (x + 12) + 'px';
+      pin.style.top = (y - 10) + 'px';
+      document.body.appendChild(pin);
+      pxPinnedList.push(pin);
+      pin.addEventListener('dblclick', function() { pin.remove(); pxPinnedList = pxPinnedList.filter(function(p) { return p !== pin; }); });
+    }
+    function clearAllPins() { pxPinnedList.forEach(function(p) { p.remove(); }); pxPinnedList = []; }
+    wrapper.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+    wrapper.addEventListener('mousedown', function(e) {
+      if (e.button !== 2) return;
+      e.preventDefault(); e.stopPropagation();
+      pxTracking = true; pxFloat.style.display = 'block';
+      readPixel(e, pxFloat);
+      wrapper._pxStartX = e.clientX; wrapper._pxStartY = e.clientY;
+    });
+    document.addEventListener('mousemove', function(e) {
+      if (!pxTracking) return;
+      readPixel(e, pxFloat);
+    });
+    document.addEventListener('mouseup', function(e) {
+      if (!pxTracking || e.button !== 2) return;
+      var dx = e.clientX - (wrapper._pxStartX || 0);
+      var dy = e.clientY - (wrapper._pxStartY || 0);
+      var txt = pxFloat.textContent;
+      if (Math.abs(dx) < 5 && Math.abs(dy) < 5 && txt) {
+        makePxPin(e.clientX, e.clientY, txt);
       }
+      pxFloat.style.display = 'none';
+      pxTracking = false;
+    });
+    // Clear pins on toolbar/meta clicks
+    wrapper.addEventListener('click', function(e) {
+      if (e.target && (e.target.closest('.channel-toolbar') || e.target.closest('.channel-meta'))) clearAllPins();
+    });
+    document.addEventListener('scroll', function() { clearAllPins(); });
+
+    // Auto-detect channels from DDS DXGI header (no JSON needed)
+    var cachedForCh = ddsCache.get(img.src);
+    if (cachedForCh && cachedForCh.dds && cachedForCh.dds.fmt.dxgi) {
+      var chMap = chMapFromDxgi(cachedForCh.dds.fmt.dxgi);
       tb.querySelectorAll('.channel-btn').forEach(function(btn) {
         var ch = btn.textContent;
         if (ch === 'RGB' || btn.classList.contains('flip-btn')) return;
         if (!(ch === 'RGBA' ? chMap.A : chMap[ch])) btn.style.display = 'none';
       });
-      // Auto-click default channel: "R" for single-channel formats, "RGB" otherwise
       var onlyR = chMap.R && !chMap.G && !chMap.B;
       var defBtn = tb.querySelector(onlyR ? '[data-ch=R]' : '[data-ch=RGB]');
       if (defBtn) defBtn.click();
+    } else {
+      // Non-DDS (EXR, standard): always auto-click RGB
+      var defBtn = tb.querySelector('[data-ch=RGB]');
+      if (defBtn) defBtn.click();
+    }
+
+    // Fetch RenderDoc JSON sidecar for metadata overlay + auto-detect channels + MIP slider
+    var jsonUrl2 = img.src.replace(/\.[^.]+$/, '.json');
+    var jsonPromise;
+    if (jsonCache.has(jsonUrl2)) {
+      jsonPromise = Promise.resolve(jsonCache.get(jsonUrl2));
+    } else {
+      jsonPromise = fetch(jsonUrl2).then(function(r) { if (!r.ok) throw r.status; return r.json(); });
+    }
+    jsonPromise.then(function(data) {
+      if (!data) return;
+      var rd = data.renderdoc || {}, ai = data.ai || {};
 
       // Auto-flip if flip_y is true in JSON sidecar
       if (data.flip_y) {
@@ -1155,9 +1386,15 @@ var decodeWorker = (function(){
       var fname = img.src.split('/').pop();
       if (fname) lines.unshift(fname);
       ['event_id','file_type'].forEach(function(k) { if (data[k] !== undefined) lines.push(k + ': ' + data[k]); });
+      // Format/size from JSON if available, else from DDS header
+      var cachedFmt = ddsCache.get(img.src);
+      var ddsFmt = cachedFmt && cachedFmt.dds ? cachedFmt.dds.fmt : null;
       if (rd.format) lines.push('format: ' + rd.format);
+      else if (ddsFmt) lines.push('format: ' + (ddsFmt.type || '') + ' (DXGI ' + ddsFmt.dxgi + ')');
       if (rd.size) lines.push('size: ' + rd.size);
+      else lines.push('size: ' + w + 'x' + h);
       if (rd.mips !== undefined) lines.push('mips: ' + rd.mips);
+      else if (cachedFmt && cachedFmt.dds) lines.push('mips: ' + cachedFmt.dds.mips);
       // Show per-mip dimensions and compressed sizes from DDS header
       var cachedDds = ddsCache.get(img.src);
       if (cachedDds && cachedDds.dds && cachedDds.dds.mipList) {
@@ -1167,13 +1404,14 @@ var decodeWorker = (function(){
         });
       }
       if (rd.array_size !== undefined) lines.push('array_size: ' + rd.array_size);
-      // MIP level slider — if mip=-1, use actual mip count from parsed DDS header
+      // MIP level slider — use DDS header mip count, JSON mip=-1 means all mips
       var totalMips;
+      var cachedM = ddsCache.get(img.src);
+      var ddsMips = cachedM && cachedM.dds ? cachedM.dds.mips : 1;
       if (data.mip === -1) {
-        var cached2 = ddsCache.get(img.src);
-        totalMips = (cached2 && cached2.dds) ? cached2.dds.mips : (parseInt(rd.mips) || 1);
+        totalMips = ddsMips;
       } else {
-        totalMips = parseInt(rd.mips) || 1;
+        totalMips = parseInt(rd.mips) || ddsMips;
       }
       var maxMip = Math.max(0, totalMips - 1);
       // If exported mip level is -1 (all) or >= totalMips (invalid), default to mip 0
@@ -1187,16 +1425,9 @@ var decodeWorker = (function(){
       var meta = document.createElement('div'); meta.className = 'channel-meta';
       var inner = document.createElement('div'); inner.className = 'channel-meta-inner';
       inner.textContent = lines.join('\n');
-      var totalArray = parseInt(rd.array_size) || 0;
-      if (!totalArray) {
-        var cachedDds = ddsCache.get(img.src);
-        if (cachedDds && cachedDds.dds && cachedDds.dds.arraySize > 1) totalArray = cachedDds.dds.arraySize;
-      }
-      // Override DDS arraySize from JSON if available
-      if (totalArray > 0) {
-        var cachedDds2 = ddsCache.get(img.src);
-        if (cachedDds2 && cachedDds2.dds) cachedDds2.dds.arraySize = totalArray;
-      }
+      var cachedDdsArr = ddsCache.get(img.src);
+      var totalArray = cachedDdsArr && cachedDdsArr.dds ? cachedDdsArr.dds.arraySize : 1;
+      if (totalArray <= 1) totalArray = parseInt(rd.array_size) || 0;
       var curSlice = 0;
 
       // Unified slice+mip render helper
@@ -1213,7 +1444,7 @@ var decodeWorker = (function(){
           cv.width = mw; cv.height = mh;
           cv.getContext('2d').putImageData(new ImageData(px, mw, mh), 0, 0);
           cv.style.width = displayW + 'px';
-          cv.style.height = isLUT ? displayH + 'px' : 'auto';
+          cv.style.height = tinyDim ? displayH + 'px' : 'auto';
           straight = px;
           pxCache.set(img.src, px);
           curW = mw; curH = mh;
@@ -1296,6 +1527,10 @@ var decodeWorker = (function(){
     if (/\.dds$/i.test(img.src)) {
       var ddsCached = ddsCache.get(img.src);
       if (ddsCached) { processImage(img, ddsCached.dds.w, ddsCached.dds.h, ddsCached.mip0); return; }
+      var jsonUrl = img.src.replace(/\.dds$/i, '.json');
+      if (!jsonCache.has(jsonUrl)) {
+        fetch(jsonUrl).then(function(r) { if (r.ok) return r.json(); }).then(function(d) { if (d) jsonCache.set(jsonUrl, d); }).catch(function(){});
+      }
       img.style.outline = '1px dashed #555';
       fetch(img.src).then(function(r) { if (!r.ok) return; return r.arrayBuffer(); }).then(function(buf) {
         if (!buf) return;
@@ -1303,7 +1538,8 @@ var decodeWorker = (function(){
         var dds = DDS.parse(buf);
         if (!dds) return;
         // If BC7/BC6H, decode on main thread (needs WebGL)
-        if (dds.fmt.isComp && dds.fmt.type!=='BC1'&&dds.fmt.type!=='BC3'&&dds.fmt.type!=='BC4'&&dds.fmt.type!=='BC5') {
+        var dfam = dds.fmt.family;
+        if (dds.fmt.isComp && dfam!=='BC1'&&dfam!=='BC3'&&dfam!=='BC4'&&dfam!=='BC5') {
           var mip0 = dds.getMip(0);
           if (!mip0) return;
           ddsCache.set(img.src, {dds:dds, mip0:mip0});
@@ -1311,13 +1547,20 @@ var decodeWorker = (function(){
           processImage(img, dds.w, dds.h, mip0);
           return;
         }
+        // Check JSON for TYPELESS format, override decode to raw uint16
+        var typeOverride = null;
+        var jsonData = jsonCache.get(jsonUrl);
+        if (jsonData) {
+          var rdFmt = (jsonData.renderdoc || {}).format || '';
+          if (/TYPELESS/i.test(rdFmt) && dds.fmt.family === 'R16F') typeOverride = 'R16';
+        }
         // Offload decode to worker
         decodeWorker.decode('dds', buf, function(result) {
           img.style.outline = '';
           if (!result.ok) return;
           ddsCache.set(img.src, {dds:dds, mip0:result.pixels});
           processImage(img, result.w, result.h, result.pixels);
-        });
+        }, false, typeOverride);
       }).catch(function(){ img.style.outline = ''; });
       return;
     }
@@ -1326,6 +1569,10 @@ var decodeWorker = (function(){
     if (/\.exr$/i.test(img.src)) {
       var exrCached = exrCache.get(img.src);
       if (exrCached) { processImage(img, exrCached.exr.w, exrCached.exr.h, exrCached.rgba8); return; }
+      var jsonUrlExr = img.src.replace(/\.exr$/i, '.json');
+      if (!jsonCache.has(jsonUrlExr)) {
+        fetch(jsonUrlExr).then(function(r) { if (r.ok) return r.json(); }).then(function(d) { if (d) jsonCache.set(jsonUrlExr, d); }).catch(function(){});
+      }
       img.style.outline = '1px dashed #555';
       fetch(img.src).then(function(r) { if (!r.ok) return; return r.arrayBuffer(); }).then(function(buf) {
         if (!buf) return;
@@ -1334,7 +1581,7 @@ var decodeWorker = (function(){
           if (!result.ok) return;
           exrCache.set(img.src, {exr:{w:result.w,h:result.h}, rgba8:result.pixels});
           processImage(img, result.w, result.h, result.pixels);
-        });
+        }, true);
       }).catch(function(){ img.style.outline = ''; });
       return;
     }
