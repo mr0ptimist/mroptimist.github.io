@@ -69,6 +69,14 @@ hidden = true   # 可选，私密文章
 - 优先引用：官方文档 > 官方博客 > 论文/专利 > 知名技术博客 > 社区讨论
 - **引用网址必须验证可访问**：每个外链写入文章前必须 curl 或浏览器确认返回 200，404/超时的链接不使用，替换为可用的替代来源
 
+## Mermaid 图表规范（兼容 11.x）
+
+**已通过 JS 自动修复解决**：浏览器 HTML 解析器会吞掉 `<<interface>>` 中的 `<interface>` 标签，`runMermaid()` 在 mermaid 渲染前自动修复 `&lt;<` → `&lt;&lt;` 并通过 `textContent` 写回。写 mermaid 时直接用 `<<interface>>`，无需手动转义。
+
+**仍需注意**：flowchart 未加引号的节点标签含 `()` `,` `:` `@` `→` `×` `+` `=` 等会 Syntax error，所有节点标签和 subgraph 标题一律用 `["..."]` 包裹。
+
+**验证**：`npx @mermaid-js/mermaid-cli -i file.mmd -o out.png`
+
 ## 文件命名
 
 - 用中文或英文均可，已有示例：`移动端GPU可见性剔除机制.md`、`NVIDIA_GPU_Performance_Counters_Complete_zh.md`

@@ -10,6 +10,17 @@ mermaid.initialize({
 });
 
 function runMermaid() {
+  // Hugo's safeHTML sets innerHTML, but the browser HTML parser eats angle-bracket
+  // syntax like <<interface>> (parses <interface> as an HTML tag). Fix by reading
+  // innerHTML, restoring &lt; sequences that should be <<, and writing back via
+  // textContent so mermaid sees the correct source.
+  document.querySelectorAll('pre.mermaid:not([data-processed])').forEach(function(pre) {
+    var html = pre.innerHTML;
+    html = html.replace(/&lt;</g, '&lt;&lt;').replace(/>&gt;/g, '&gt;&gt;');
+    var temp = document.createElement('div');
+    temp.innerHTML = html;
+    pre.textContent = temp.textContent;
+  });
   mermaid.run({ querySelector: 'pre.mermaid:not([data-processed])' }).then(function() {
     document.querySelectorAll('pre.mermaid .nodeLabel div, pre.mermaid .nodeLabel p').forEach(function(el) {
       el.style.maxWidth = 'none';
