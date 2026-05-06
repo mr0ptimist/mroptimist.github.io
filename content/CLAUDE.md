@@ -77,6 +77,32 @@ hidden = true   # 可选，私密文章
 
 **验证**：`npx @mermaid-js/mermaid-cli -i file.mmd -o out.png`
 
+### Dark Reader 兼容
+
+Dark Reader 会覆盖 mermaid SVG 中的 fill/color，导致部分节点颜色不一致、文字变白。解决方案：
+
+1. **节点背景色**：所有 flowchart 节点必须用 `classDef` 指定 `fill` 和 `color`（mermaid 内部加 `!important`，Dark Reader 无法覆盖）
+   ```
+   classDef proc fill:#e1f5fe,color:#000
+   class A,B proc
+   ```
+2. **文字颜色**：`classDef` 的 `color:#000` 对节点内文字有效，但 subgraph 标题等非节点文字不受 `classDef` 控制。`runMermaid()` 渲染后自动对所有 `<text>` 元素执行 `style.setProperty('fill', '#000', 'important')`，inline `!important` 优先级高于 Dark Reader 注入的 stylesheet 规则
+3. **不要用 Shadow DOM**：会破坏 SVG 缩放
+4. **不要用 `<style>` 注入**：Dark Reader 仍可覆盖 SVG 内部的 stylesheet 规则
+
+**标准配色方案**（所有 flowchart 统一使用）：
+
+| class | fill | 用途 |
+|-------|------|------|
+| `proc` | `#e1f5fe` | 流程步骤 |
+| `dec` | `#fff9c4` | 判断/分支 |
+| `data` | `#fff3e0` | 数据/IO |
+| `ok` | `#e8f5e9` | 成功/输出 |
+| `err` | `#ffebee` | 错误/等待 |
+| `out` | `#f3e5f5` | 最终结果 |
+
+每个 classDef 都必须带 `color:#000`，例如 `classDef proc fill:#e1f5fe,color:#000`。
+
 ## 文件命名
 
 - 用中文或英文均可，已有示例：`移动端GPU可见性剔除机制.md`、`NVIDIA_GPU_Performance_Counters_Complete_zh.md`

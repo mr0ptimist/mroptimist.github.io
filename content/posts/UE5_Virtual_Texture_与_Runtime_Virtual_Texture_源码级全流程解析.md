@@ -177,10 +177,17 @@ flowchart TD
     L1 --> L2["Finalize() (CopyPage→PhysicalCache)"]
     L2 --> L3["批量更新 GPU PageTable 纹理"]
 
-    style A fill:#e1f5fe
-    style D fill:#fff3e0
-    style K fill:#e8f5e9
-    style L fill:#fce4ec
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef data fill:#fff3e0,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    classDef out fill:#f3e5f5,color:#000
+    class A,B,C,I data
+    class D,D1,D2,D3 proc
+    class E,F,G,H proc
+    class J,K,K1 proc
+    class K2,K3,K4 out
+    class L,L1,L2,L3 ok
 ```
 
 ---
@@ -245,6 +252,12 @@ flowchart LR
         UM["Unmap() 释放"]
     end
     PS --> SB --> F --> M --> UM
+
+    classDef data fill:#e1f5fe,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    class PS data
+    class SB,F data
+    class M,UM ok
 ```
 
 ### 3.5 自定义 FeedbackBuffer
@@ -282,6 +295,14 @@ flowchart TD
     D --> F["AddMappingRequest()\n创建映射请求"]
     E --> G["更新 LRU Cache"]
     F --> G
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    class A proc
+    class B dec
+    class C ok
+    class D,E,F,G proc
 ```
 
 **查找 Page 是否存在**的核心代码（`FTexturePageMap::FindPagePhysicalSpaceIDAndAddress`）：
@@ -320,6 +341,14 @@ flowchart TD
 从所有 PageTable 解映射"]
     E --> F["重新分配物理地址"]
     F --> G["返回该页"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    class A proc
+    class B dec
+    class C,G ok
+    class D,E,F proc
 ```
 
 ### 4.4 请求合并与排序
@@ -367,6 +396,18 @@ flowchart TD
 加入 Finalizer 列表"]
     M --> N["处理 MappingRequests
 映射到 CPU 端 PageTable"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    classDef err fill:#ffebee,color:#000
+    classDef out fill:#f3e5f5,color:#000
+    class A,B,H,K,L,M,N proc
+    class C dec
+    class D out
+    class E,F,G err
+    class I dec
+    class J ok
 ```
 
 ### RVT vs SVT 的 RequestPageData 行为对比
@@ -390,6 +431,16 @@ flowchart TD
     B -->|有| E{"Task.IsComplete()?"}
     E -->|是| F["返回 Available"]
     E -->|否| G["返回 Pending"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef data fill:#fff3e0,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    classDef out fill:#f3e5f5,color:#000
+    class A,B,E proc
+    class C data
+    class D,G out
+    class F ok
 ```
 
 `FUploadingVirtualTexture` 的 `ProducePageData` 流程：
@@ -402,6 +453,13 @@ flowchart TD
     D --> E{"选择上传路径"}
     E -->|"Buffer Texture"| F["RHICmdList.UpdateFromBufferTexture2D()"]
     E -->|"普通 Texture"| G["RHICmdList.UpdateTexture2D()"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef data fill:#fff3e0,color:#000
+    class A,B,C,D data
+    class E dec
+    class F,G proc
 ```
 
 **截帧可见**：SVT Page 的实际加载路径是 CPU Write → Fast Allocator Page → CopyTextureRegion → PhysicalPages，而非 Runtime Generate Page。
@@ -425,6 +483,15 @@ flowchart TD
     D --> D1["CopyPage 到最终 PhysicalCache"]
     D1 --> E["ApplyUpdates()
 批量更新 GPU 端 PageTable 纹理"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    classDef out fill:#f3e5f5,color:#000
+    class A,B,C,C2,D,D1 proc
+    class C1 dec
+    class C3 out
+    class E ok
 ```
 
 ### RVT Page 渲染细节
@@ -459,6 +526,11 @@ PageTable 的更新不是逐像素写入，而是通过**几何渲染**批量完
 flowchart TD
     A["先渲染父 Page"] --> B["再渲染所有子 Page 覆盖"]
     B --> C["简单但有 Overdraw"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef out fill:#f3e5f5,color:#000
+    class A,B proc
+    class C out
 ```
 
 **2. ExpandPageTableUpdateMasked** — 四叉树分割 + 遮罩
@@ -467,6 +539,11 @@ flowchart TD
 flowchart TD
     A["递归将父 Page 分成 4/8 子区域"] --> B["只渲染非重叠区域"]
     B --> C["更复杂但像素更少"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef out fill:#f3e5f5,color:#000
+    class A,B proc
+    class C out
 ```
 
 对应 Shader 位于 `PageTableUpdate.usf`，以 Quad 实例化方式渲染，Vertex Shader 生成 Quad 位置，Pixel Shader 写入 `(vAddress, pAddress)` 到 PageTable 纹理。
@@ -610,6 +687,16 @@ flowchart TD
         E -->|"是 (高 Mip)"| F["路由到 RVT Producer"]
         E -->|"否 (低 Mip)"| G["路由到 SVT Producer"]
     end
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    classDef data fill:#fff3e0,color:#000
+    class A,B data
+    class C,D proc
+    class E dec
+    class F ok
+    class G data
 ```
 
 ### 8.2 FVirtualTextureLevelRedirector
@@ -649,6 +736,13 @@ flowchart TD
     F --> G["计算 TransitionLevel = NumLevels - NumStreamingLevels"]
     G --> H["BindStreamingTextureProducer 用 LevelRedirector 包装"]
     H --> I["MaxDirtyLevel = TransitionLevel - 1 防止脏页刷新影响SVT Mip"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    class A,B proc
+    class C ok
+    class D,E,F,G,H,I proc
 ```
 
 **TransitionLevel 计算**（`RuntimeVirtualTextureSceneProxy.cpp`）：
@@ -681,6 +775,18 @@ flowchart TD
     L --> M{"上传路径"}
     M -->|"Buffer Texture"| N["UpdateFromBufferTexture2D"]
     M -->|"普通 Texture"| O["UpdateTexture2D"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    classDef data fill:#fff3e0,color:#000
+    classDef out fill:#f3e5f5,color:#000
+    class A,J,K,L proc
+    class B,G dec
+    class C,D,E data
+    class F,H ok
+    class I out
+    class M,N,O proc
 ```
 
 **关键数据结构**：
@@ -746,6 +852,11 @@ flowchart TD
         D --> E["计算 Grid 内 MipLevel 调整 dUVdxdy"]
         E --> F["查找实际 PageTable"]
     end
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    class A,B,C,D,E proc
+    class F ok
 ```
 
 **Shader 端映射过程**（`ApplyAdaptivePageTableUniform`）：
@@ -773,6 +884,9 @@ flowchart TD
     A["GetPackedAllocationRequest - 编码 vAddress vLevel+1 frame"] --> B["QueuePackedAllocationRequests - 批量入队"]
     B --> C["UpdateAllocations - 处理请求 重新分配子 VT"]
     C --> D["RemapVirtualTexturePages - 重新映射页"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    class A,B,C,D proc
 ```
 
 ---
@@ -795,6 +909,13 @@ flowchart TD
     G -->|否| I["逐个 FlushCache"]
     H --> J["FlushCache CombinedDirtyRect"]
     I --> K["FlushCache 单个 DirtyRect"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    class A,B,C,D,E,F,I,J,K proc
+    class G dec
+    class H ok
 ```
 
 **关键**：`MaxDirtyLevel` 限制脏页刷新不触及 SVT 管理的低 Mip 区域。
@@ -839,6 +960,15 @@ flowchart TD
     B -->|否| D{"Ratio 小于 LowerBound 0.95?"}
     D -->|是| E["ResidencyMipMapBias 减小 使用更精细的 Mip"]
     D -->|否| F["维持当前 Bias"]
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef err fill:#ffebee,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    class A proc
+    class B,D dec
+    class C err
+    class E,F ok
 ```
 
 **控制 CVar**：
@@ -928,6 +1058,15 @@ flowchart TD
     end
 
     G --> I
+
+    classDef proc fill:#e1f5fe,color:#000
+    classDef dec fill:#fff9c4,color:#000
+    classDef err fill:#ffebee,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    class A,E,I proc
+    class B,F dec
+    class C,G err
+    class D,H ok
 ```
 
 ### 13.2 维护映射关系
@@ -994,10 +1133,17 @@ flowchart TD
         PTU --> PT
     end
 
-    style BP fill:#e1f5fe
-    style FB fill:#fff3e0
-    style PHY fill:#e8f5e9
-    style PT fill:#f3e5f5
+    classDef proc fill:#e1f5fe,color:#000
+    classDef data fill:#fff3e0,color:#000
+    classDef ok fill:#e8f5e9,color:#000
+    classDef out fill:#f3e5f5,color:#000
+    class BP,PT,FB,CPU_FB data
+    class UPL,RL,LT,PK,SR proc
+    class RVT_P ok
+    class SVT_P,IO,UP data
+    class FIN out
+    class RP,RT,CP,PTU proc
+    class PHY out
 ```
 
 ---

@@ -22,8 +22,14 @@ function runMermaid() {
     pre.textContent = temp.textContent;
   });
   mermaid.run({ querySelector: 'pre.mermaid:not([data-processed])' }).then(function() {
-    document.querySelectorAll('pre.mermaid .nodeLabel div, pre.mermaid .nodeLabel p').forEach(function(el) {
-      el.style.maxWidth = 'none';
+    document.querySelectorAll('pre.mermaid svg').forEach(function(svg) {
+      svg.querySelectorAll('.nodeLabel div, .nodeLabel p').forEach(function(el) {
+        el.style.maxWidth = 'none';
+      });
+      // Force all text black with inline !important to block Dark Reader
+      svg.querySelectorAll('text').forEach(function(t) {
+        t.style.setProperty('fill', '#000', 'important');
+      });
     });
   });
 }
