@@ -175,6 +175,7 @@ details.toc {
   margin: 0;
   background: none;
   box-shadow: none;
+  padding-inline-start: 0;
 }
 
 details.toc summary {
@@ -188,7 +189,7 @@ details.toc summary::-webkit-details-marker {
 @media (min-width: 1400px) {
   details.toc {
     position: fixed;
-    left: 20px;
+    left: 10px;
     top: 80px;
     width: 300px;
     max-height: calc(100vh - 100px);
@@ -220,17 +221,20 @@ details.toc summary::-webkit-details-marker {
     display: block;
     font-size: 0.85em;
     border-left: 2px solid var(--border);
-    padding-left: 12px;
+    padding-left: 6px;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
   }
 
   details.toc .inner ul {
-    padding-left: 12px;
-    margin: 2px 0;
+    padding-left: 8px;
+    margin: 1px 0;
     list-style: none;
   }
 
   details.toc .inner li {
-    margin: 4px 0;
+    margin: 2px 0;
   }
 
   details.toc .inner a {

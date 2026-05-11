@@ -254,11 +254,14 @@
     });
     tb.appendChild(flipBtn);
 
-    // Point sampling toggle button
+    // --- bottom toolbar row (sampling) ---
+    var bottomRow = document.createElement('div');
+    bottomRow.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:3px;width:100%';
+
     var samplingBtn = document.createElement('button');
     samplingBtn.className = 'channel-btn sampling-btn';
-    samplingBtn.textContent = '1:1';
-    samplingBtn.title = '点采样 / 线性采样';
+    samplingBtn.textContent = '\u70b9';
+    samplingBtn.title = '\u70b9\u91c7\u6837 / \u7ebf\u6027\u91c7\u6837';
     var samplingNearest = false;
     samplingBtn.addEventListener('click', function() {
       samplingNearest = !samplingNearest;
@@ -266,7 +269,8 @@
       var cvs = wrapper.querySelectorAll('canvas');
       cvs.forEach(function(cv) { cv.classList.toggle('sampling-nearest', samplingNearest); });
     });
-    tb.appendChild(samplingBtn);
+    bottomRow.appendChild(samplingBtn);
+    tb.appendChild(bottomRow);
 
     // DDS/EXR: create canvas immediately
     if (ddsPixels) {
@@ -522,7 +526,7 @@
       };
       var curMip = curMipTop;
 
-      var rowStyle = 'display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:2px 3px;background:rgba(0,0,0,0.45);border-radius:3px;margin:1px 0;width:100%';
+      var rowStyle = 'display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:2px 3px;background:rgba(0,0,0,0.45);border-radius:3px;margin:1px 0;width:auto';
       if (totalMips > 1) {
         var mipRow = document.createElement('div');
         mipRow.style.cssText = rowStyle;
@@ -533,8 +537,14 @@
         mipSlider.type = 'range'; mipSlider.min = 0; mipSlider.max = totalMips - 1; mipSlider.value = curMip;
         mipSlider.style.cssText = 'width:60px;height:10px;cursor:pointer;accent-color:#4a9eff';
         mipSlider.addEventListener('input', function(e) { e.stopPropagation(); renderSliceMip(undefined, parseInt(mipSlider.value)); mipLabel.textContent = 'Lv.' + mipSlider.value + ' / ' + (totalMips-1); });
-        mipSlider.addEventListener('mousedown', function() { meta.style.opacity = '0'; });
-        mipSlider.addEventListener('mouseup', function() { meta.style.opacity = ''; });
+        mipSlider.addEventListener('mousedown', function() {
+          meta.style.opacity = '0';
+          for (var c = tb.firstChild; c; c = c.nextSibling) { if (c !== mipRow) c.style.opacity = '0'; }
+        });
+        mipSlider.addEventListener('mouseup', function() {
+          meta.style.opacity = '';
+          for (var c = tb.firstChild; c; c = c.nextSibling) { c.style.opacity = ''; }
+        });
         mipRow.appendChild(mipLabel);
         mipRow.appendChild(mipSlider);
         tb.appendChild(mipRow);
@@ -549,12 +559,19 @@
         arrSlider.type = 'range'; arrSlider.min = 0; arrSlider.max = totalArray - 1; arrSlider.value = 0;
         arrSlider.style.cssText = 'width:60px;height:10px;cursor:pointer;accent-color:#f0a030';
         arrSlider.addEventListener('input', function(e) { e.stopPropagation(); renderSliceMip(parseInt(arrSlider.value), undefined); arrLabel.textContent = 'F.' + arrSlider.value + '/' + (totalArray-1); });
-        arrSlider.addEventListener('mousedown', function() { meta.style.opacity = '0'; });
-        arrSlider.addEventListener('mouseup', function() { meta.style.opacity = ''; });
+        arrSlider.addEventListener('mousedown', function() {
+          meta.style.opacity = '0';
+          for (var c = tb.firstChild; c; c = c.nextSibling) { if (c !== arrRow) c.style.opacity = '0'; }
+        });
+        arrSlider.addEventListener('mouseup', function() {
+          meta.style.opacity = '';
+          for (var c = tb.firstChild; c; c = c.nextSibling) { c.style.opacity = ''; }
+        });
         arrRow.appendChild(arrLabel);
         arrRow.appendChild(arrSlider);
         tb.appendChild(arrRow);
       }
+      tb.appendChild(bottomRow);
       meta.appendChild(inner);
       var btnRow = document.createElement('div');
       btnRow.className = 'channel-meta-btns';

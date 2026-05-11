@@ -48,7 +48,23 @@
 }
 
 .post-content details.collapsible-section > .collapse-body {
-  padding: 0 1em 1em;
+  padding: 0 1em 1em 2em;
+  border-left: 2px solid var(--border);
+  margin-left: 0.5em;
+}
+
+/* h3 subsection indent — heading stays flush, body content indented */
+.collapse-body .subsection {
+  margin: 0.8em 0;
+}
+
+.collapse-body .subsection-body {
+  padding-left: 1.5em;
+  border-left: 2px solid var(--border);
+}
+
+.collapse-body .subsection h3 {
+  margin-top: 0;
 }
 
 .post-content details.collapsible-section[open] {
