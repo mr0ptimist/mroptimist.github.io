@@ -8,11 +8,15 @@
   overflow: hidden;
 }
 
-.channel-container img,
-.channel-container canvas {
+.channel-container canvas,
+.channel-container img {
   display: block;
   max-width: 100%;
   height: auto;
+}
+
+.channel-container canvas.sampling-nearest {
+  image-rendering: pixelated;
 }
 
 .channel-toolbar {

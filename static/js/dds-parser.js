@@ -115,7 +115,11 @@ var DDS = (function(){
       } else {
         size = mw * mh * (fmt.bpp / 8);
       }
-      if (mipOff + size > buf.byteLength) break;
+      if (mipOff + size > buf.byteLength) {
+        if (i === 0) size = buf.byteLength - mipOff;
+        else break;
+      }
+      if (size <= 0) break;
       mipList.push({off:mipOff, size:size, w:mw, h:mh});
       mipOff += size;
     }

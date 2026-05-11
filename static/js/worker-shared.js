@@ -243,7 +243,7 @@
       var bo = (by*nbw+bx)*(fc==='DXT1'||dx===70||dx===71?8:16);
       var block = new Uint8Array(64);
       if (fc==='DXT1'||dx===70||dx===71) bc1Block(data, bo, block);
-      else if (fc==='DXT5'||dx===77||dx===78) { bc4Block(data, bo, block); bc1Block(data, bo+8, block); }
+      else if (fc==='DXT5'||dx===77||dx===78) { bc1Block(data, bo+8, block); bc4Chan(data, bo, block, 3); }
       else if (fc==='DXT3'||dx===74||dx===75) { for(var i=0;i<16;i++) block[i*4+3]=((data[bo+(i>>1)]>>((i&1)*4))&15)*17; bc1Block(data, bo+8, block); }
       else if (fc==='ATI1'||dx===80||dx===81) bc4Block(data, bo, block);
       else if (fc==='ATI2'||dx===83||dx===84) bc5Block(data, bo, block);

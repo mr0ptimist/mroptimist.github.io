@@ -32,6 +32,7 @@ Hugo version: 0.160.1 extended.
   - TOC auto-filtering (hides deeply nested headings, highlights active section)
 - **DDS/EXR Direct Viewer**: header parsing + pixel decode + WebGL canvas display. No preview PNGs needed — reference DDS/EXR files directly in markdown.
   - **DDS parser**: DX10 + legacy headers, formats: RGBA8, R10G10B10A2, R8G8, R8, R16G16, R16/R16F, D32S8 (8 bytes/px, skip stencil padding), BC1/BC4/BC5 (CPU decode), BC7/BC6H (WebGL `EXT_texture_compression_bptc`). DX10 uncompressed formats MUST set `bpp` from `DXGI_BPP` table.
+    - **Worker cache trap**: Worker 通过 `importScripts()` 加载 `worker-shared.js`，浏览器强缓存不会随 Hugo 重启刷新。修改 worker 或 worker-shared 后，需要更新 `image-viewer.js` 中 worker URL 和 `decode-worker.js` 中 `importScripts` 的 cache-buster 参数（`?v=N`），同时让用户 `Ctrl+Shift+R` 硬刷新。
   - **EXR parser**: uncompressed OpenEXR only, float32/half16 channels, Reinhard + gamma 2.2 tone map.
   - **Web Worker**: DDS/EXR pixel decode offloaded to background thread. Transferable ArrayBuffer zero-copy. Inline worker via Blob URL. BC7/BC6H stays on main thread (needs WebGL).
   - **IntersectionObserver**: lazy-load images within 800px of viewport. `ddsCache`/`exrCache` avoid re-decode on channel/mip switch.

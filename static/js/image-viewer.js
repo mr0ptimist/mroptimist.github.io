@@ -105,7 +105,7 @@
     var nextWorker = 0;
 
     var myScript = document.querySelector('script[src*="image-viewer.js"]');
-    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js$/, 'decode-worker.js') : '/js/decode-worker.js';
+    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=4') : '/js/decode-worker.js?v=4';
 
     for (var i = 0; i < NUM_WORKERS; i++) {
       var w = new Worker(workerUrl);
@@ -184,6 +184,10 @@
       displayW = Math.round(w * us); displayH = Math.round(h * us);
       wrapper.classList.add('channel-small');
     }
+    if (!inTable && Math.min(displayW, displayH) > 500) {
+      var s = 500 / Math.min(displayW, displayH);
+      displayW = Math.round(displayW * s); displayH = Math.round(displayH * s);
+    }
     if (tinyDim) {
       if (displayW < 20) displayW = 20;
       if (displayH < 20) displayH = 20;
@@ -223,12 +227,12 @@
           tb.classList.add('pinned');
         } else {
           var ci = {'R':0,'G':1,'B':2}[ch];
-          for (var i = 0; i < px.length; i += 4) { var v = px[i+ci]; px[i]=ci===0?v:0; px[i+1]=ci===1?v:0; px[i+2]=ci===2?v:0; px[i+3]=255; }
+          for (var i = 0; i < px.length; i += 4) { var v = px[i+ci]; px[i]=v; px[i+1]=v; px[i+2]=v; px[i+3]=255; }
           tb.classList.add('pinned');
         }
         if (!ddsPixels) img.style.display = 'none';
         var cv = wrapper.querySelector('canvas');
-        if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; wrapper.appendChild(cv); }
+        if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; if (samplingNearest) cv.classList.add('sampling-nearest'); wrapper.appendChild(cv); }
         cv.width = curW; cv.height = curH;
         if (displayW !== w) { cv.style.width = displayW + 'px'; }
         cv.getContext('2d').putImageData(new ImageData(px, curW, curH), 0, 0);
@@ -249,6 +253,20 @@
       flipBtn.classList.toggle('active', !flipped);
     });
     tb.appendChild(flipBtn);
+
+    // Point sampling toggle button
+    var samplingBtn = document.createElement('button');
+    samplingBtn.className = 'channel-btn sampling-btn';
+    samplingBtn.textContent = '1:1';
+    samplingBtn.title = '点采样 / 线性采样';
+    var samplingNearest = false;
+    samplingBtn.addEventListener('click', function() {
+      samplingNearest = !samplingNearest;
+      samplingBtn.classList.toggle('active', samplingNearest);
+      var cvs = wrapper.querySelectorAll('canvas');
+      cvs.forEach(function(cv) { cv.classList.toggle('sampling-nearest', samplingNearest); });
+    });
+    tb.appendChild(samplingBtn);
 
     // DDS/EXR: create canvas immediately
     if (ddsPixels) {
@@ -391,7 +409,7 @@
       var chMap = chMapFromDxgi(cachedForCh.dds.fmt.dxgi);
       tb.querySelectorAll('.channel-btn').forEach(function(btn) {
         var ch = btn.textContent;
-        if (ch === 'RGB' || btn.classList.contains('flip-btn')) return;
+        if (ch === 'RGB' || btn.classList.contains('flip-btn') || btn.classList.contains('sampling-btn')) return;
         if (!(ch === 'RGBA' ? chMap.A : chMap[ch])) btn.style.display = 'none';
       });
       var onlyR = chMap.R && !chMap.G && !chMap.B;
@@ -400,6 +418,17 @@
     } else {
       var defBtn = tb.querySelector('[data-ch=RGB]');
       if (defBtn) defBtn.click();
+    }
+
+    // Auto-detect point sampling for integer formats
+    var ddsFmtType = '';
+    if (cachedForCh && cachedForCh.dds && cachedForCh.dds.fmt.type) ddsFmtType = cachedForCh.dds.fmt.type;
+    var intType = /UINT|INT|SINT/i.test(ddsFmtType);
+    if (intType) {
+      var cvs = wrapper.querySelectorAll('canvas');
+      cvs.forEach(function(cv) { cv.classList.add('sampling-nearest'); });
+      samplingNearest = true;
+      samplingBtn.classList.add('active');
     }
 
     // Fetch JSON sidecar for metadata overlay
@@ -419,6 +448,12 @@
         if (el) { el.style.transform = 'scaleY(-1)'; }
         var fb = tb.querySelector('.flip-btn');
         if (fb) fb.classList.add('active');
+      }
+      // JSON sidecar sampling override
+      var sampling = data.sampling || (data.renderdoc || {}).sampling || '';
+      if (sampling === 'nearest' || sampling === 'linear') {
+        var useNearest = sampling === 'nearest';
+        if (useNearest !== samplingNearest) samplingBtn.click();
       }
       var lines = [];
       var fname = img.src.split('/').pop();
@@ -473,7 +508,7 @@
           var mw = Math.max(1, cached.dds.w >> curMip);
           var mh = Math.max(1, cached.dds.h >> curMip);
           var cv = wrapper.querySelector('canvas');
-          if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; wrapper.appendChild(cv); }
+          if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; if (samplingNearest) cv.classList.add('sampling-nearest'); wrapper.appendChild(cv); }
           cv.width = mw; cv.height = mh;
           cv.getContext('2d').putImageData(new ImageData(px, mw, mh), 0, 0);
           cv.style.width = displayW + 'px';
@@ -498,6 +533,8 @@
         mipSlider.type = 'range'; mipSlider.min = 0; mipSlider.max = totalMips - 1; mipSlider.value = curMip;
         mipSlider.style.cssText = 'width:60px;height:10px;cursor:pointer;accent-color:#4a9eff';
         mipSlider.addEventListener('input', function(e) { e.stopPropagation(); renderSliceMip(undefined, parseInt(mipSlider.value)); mipLabel.textContent = 'Lv.' + mipSlider.value + ' / ' + (totalMips-1); });
+        mipSlider.addEventListener('mousedown', function() { meta.style.opacity = '0'; });
+        mipSlider.addEventListener('mouseup', function() { meta.style.opacity = ''; });
         mipRow.appendChild(mipLabel);
         mipRow.appendChild(mipSlider);
         tb.appendChild(mipRow);
@@ -512,6 +549,8 @@
         arrSlider.type = 'range'; arrSlider.min = 0; arrSlider.max = totalArray - 1; arrSlider.value = 0;
         arrSlider.style.cssText = 'width:60px;height:10px;cursor:pointer;accent-color:#f0a030';
         arrSlider.addEventListener('input', function(e) { e.stopPropagation(); renderSliceMip(parseInt(arrSlider.value), undefined); arrLabel.textContent = 'F.' + arrSlider.value + '/' + (totalArray-1); });
+        arrSlider.addEventListener('mousedown', function() { meta.style.opacity = '0'; });
+        arrSlider.addEventListener('mouseup', function() { meta.style.opacity = ''; });
         arrRow.appendChild(arrLabel);
         arrRow.appendChild(arrSlider);
         tb.appendChild(arrRow);

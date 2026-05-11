@@ -16,7 +16,7 @@
 // =============================================================================
 (function(){
   var base = self.location.href.replace(/[^/]+$/, '');
-  importScripts(base + 'worker-shared.js', base + 'exr-parser.js');
+  importScripts(base + 'worker-shared.js?v=4', base + 'exr-parser.js');
 
   var S = self.ImageCodecShared;
   if (!S) throw new Error('ImageCodecShared not available in worker');
@@ -36,6 +36,10 @@
     } else {
       mip0_size = w * h * (fmt.bpp / 8);
     }
+    // Some DDS exporters write DX10 fourCC but omit the 20-byte DX10 extension
+    if (dataOff + mip0_size > buf.byteLength) dataOff = 128;
+    mip0_size = Math.min(mip0_size, buf.byteLength - dataOff);
+    if (mip0_size <= 0) return null;
     var mip0_data = new Uint8Array(buf, dataOff, mip0_size);
     return { w:w, h:h, fmt:fmt, data:mip0_data };
   }
