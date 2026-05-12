@@ -24,8 +24,8 @@ Hugo version: 0.160.1 extended.
 ## Architecture
 
 - **Theme**: PaperMod imported as git submodule at `themes/PaperMod` — never modify theme files directly
-- **Customization**: All overrides go in `layouts/` (partials), `assets/css/extended/`, and `archetypes/`
-- **Client-side features** in `layouts/partials/extend_footer.html`:
+- **Customization**: All overrides go in `layouts/_partials/`, `layouts/` (root templates), `assets/css/extended/`, and `archetypes/`
+- **Client-side features** in `layouts/_partials/extend_footer.html`:
   - Auto-collapsible `##` headings (details/summary) — don't add manual `<details>` tags around `##`
   - Password-protected posts (`hidden: true` front matter, unlocked via nav bar)
   - Responsive width slider + TOC width slider (persisted in sessionStorage)
@@ -40,7 +40,7 @@ Hugo version: 0.160.1 extended.
   - **JSON sidecar**: each DDS/EXR has a `.json` file with `renderdoc.format`, `renderdoc.mips`, `renderdoc.size`, `ai.pipeline_stage`, `ai.content`. Metadata overlay + format-aware channel auto-detection. MIP slider appears when `mips > 1`.
   - **Format detection**: `detectFmt()` maps FourCC/DXGI to type string. DX10 → `DXGI_MAP`. Legacy → pixel-format masks. `DXGI_BPP` stores bits-per-pixel for uncompressed formats.
 - **Auto-restart**: after editing any file in this project, Claude must restart `hugo server` so changes take effect immediately
-- **Custom header**: `layouts/partials/header.html` (theme toggle, width controls, secret unlock button)
+- **Custom header**: `layouts/_partials/header.html` (theme toggle, width controls, secret unlock button)
 
 ## Content Rules
 
