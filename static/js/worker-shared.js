@@ -235,24 +235,48 @@
   function bc5Block(src, off, dst) { bc4Chan(src, off, dst, 0); bc4Chan(src, off+8, dst, 1); }
 
   // ---- Dispatch BC1-BC5 software decode ----
-  function decodeBC(data, w, h, fmt) {
-    var out = new Uint8ClampedArray(w*h*4);
+  function decodeBC(data, w, h, fmt, step) {
+    step = step || 1;
+    var outW = Math.ceil(w / step), outH = Math.ceil(h / step);
+    var out = new Uint8ClampedArray(outW * outH * 4);
     var nbw = Math.max(1,(w+3)/4|0), nbh = Math.max(1,(h+3)/4|0);
     var fc = fmt.fourCC, dx = fmt.dxgi;
-    for (var by=0;by<nbh;by++) for(var bx=0;bx<nbw;bx++) {
-      var bo = (by*nbw+bx)*(fc==='DXT1'||dx===70||dx===71?8:16);
-      var block = new Uint8Array(64);
-      if (fc==='DXT1'||dx===70||dx===71) bc1Block(data, bo, block);
-      else if (fc==='DXT5'||dx===77||dx===78) { bc1Block(data, bo+8, block); bc4Chan(data, bo, block, 3); }
-      else if (fc==='DXT3'||dx===74||dx===75) { for(var i=0;i<16;i++) block[i*4+3]=((data[bo+(i>>1)]>>((i&1)*4))&15)*17; bc1Block(data, bo+8, block); }
-      else if (fc==='ATI1'||dx===80||dx===81) bc4Block(data, bo, block);
-      else if (fc==='ATI2'||dx===83||dx===84) bc5Block(data, bo, block);
-      if (!(fc==='DXT3'||fc==='DXT5'||dx===74||dx===75||dx===77||dx===78)) { for(var i=3;i<64;i+=4) block[i]=255; }
-      for (var py=0;py<4;py++) for(var px=0;px<4;px++) {
-        var gx=bx*4+px, gy=by*4+py;
-        if(gx>=w||gy>=h) continue;
-        var doff=(gy*w+gx)*4, soff=(py*4+px)*4;
-        out[doff]=block[soff];out[doff+1]=block[soff+1];out[doff+2]=block[soff+2];out[doff+3]=block[soff+3];
+    var bs = (fc==='DXT1'||dx===70||dx===71?8:16);
+    for (var by=0;by<nbh;by++) {
+      // Skip block row if no step-aligned pixel in its Y range
+      if (step > 1) {
+        var hasY=false;
+        for(var py=0;py<4;py++){var gy=by*4+py;if(gy<h&&gy%step===0){hasY=true;break;}}
+        if(!hasY) continue;
+      }
+      for(var bx=0;bx<nbw;bx++) {
+        if (step > 1) {
+          var hasX=false;
+          for(var px=0;px<4;px++){var gx=bx*4+px;if(gx<w&&gx%step===0){hasX=true;break;}}
+          if(!hasX) continue;
+        }
+        var bo = (by*nbw+bx)*bs;
+        var block = new Uint8Array(64);
+        if (fc==='DXT1'||dx===70||dx===71) bc1Block(data, bo, block);
+        else if (fc==='DXT5'||dx===77||dx===78) { bc1Block(data, bo+8, block); bc4Chan(data, bo, block, 3); }
+        else if (fc==='DXT3'||dx===74||dx===75) { for(var i=0;i<16;i++) block[i*4+3]=((data[bo+(i>>1)]>>((i&1)*4))&15)*17; bc1Block(data, bo+8, block); }
+        else if (fc==='ATI1'||dx===80||dx===81) bc4Block(data, bo, block);
+        else if (fc==='ATI2'||dx===83||dx===84) bc5Block(data, bo, block);
+        if (!(fc==='DXT3'||fc==='DXT5'||dx===74||dx===75||dx===77||dx===78)) { for(var i=3;i<64;i+=4) block[i]=255; }
+        for (var py=0;py<4;py++) {
+          var gy=by*4+py;
+          if(gy>=h) continue;
+          if(step>1 && gy%step!==0) continue;
+          var oy = step>1 ? (gy/step|0) : gy;
+          for(var px=0;px<4;px++) {
+            var gx=bx*4+px;
+            if(gx>=w) continue;
+            if(step>1 && gx%step!==0) continue;
+            var ox = step>1 ? (gx/step|0) : gx;
+            var doff=(oy*outW+ox)*4, soff=(py*4+px)*4;
+            out[doff]=block[soff];out[doff+1]=block[soff+1];out[doff+2]=block[soff+2];out[doff+3]=block[soff+3];
+          }
+        }
       }
     }
     return out;

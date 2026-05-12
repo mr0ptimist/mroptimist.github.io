@@ -105,7 +105,7 @@
     var nextWorker = 0;
 
     var myScript = document.querySelector('script[src*="image-viewer.js"]');
-    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=4') : '/js/decode-worker.js?v=4';
+    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=10') : '/js/decode-worker.js?v=10';
 
     for (var i = 0; i < NUM_WORKERS; i++) {
       var w = new Worker(workerUrl);
@@ -117,13 +117,14 @@
     }
 
     return {
-      decode: function(type, buffer, callback, transfer, typeOverride) {
+      decode: function(type, buffer, callback, transfer, typeOverride, targetDim) {
         var id = ++nextId;
         callbacks[id] = callback;
         var w = workers[nextWorker % NUM_WORKERS];
         nextWorker++;
         var msg = {id:id, type:type, buffer:buffer};
         if (typeOverride) msg.typeOverride = typeOverride;
+        if (targetDim) msg.targetDim = targetDim;
         if (transfer) w.postMessage(msg, [buffer]);
         else w.postMessage(msg);
       }
@@ -172,29 +173,42 @@
     wrapper.className = 'channel-container';
 
     var displayW = w, displayH = h;
-    var minDim = Math.min(w, h), maxDim = Math.max(w, h);
+    var maxDim = Math.max(w, h);
     var tinyDim = Math.min(w, h) <= 4;
-    var inTable = img.closest('td');
-    var maxPx = inTable ? 800 : 1000;
-    if (maxDim > maxPx) {
-      var ds = maxPx / maxDim;
-      displayW = Math.round(w * ds); displayH = Math.round(h * ds);
-    } else if (maxDim < 540) {
-      var us = 540 / maxDim;
-      displayW = Math.round(w * us); displayH = Math.round(h * us);
-      wrapper.classList.add('channel-small');
+    var inTable = img.closest('td') || img.closest('th');
+    if (inTable) {
+      wrapper.style.width = '100%';
+      var tbl = img.closest('table');
+      if (tbl) {
+        var firstRow = tbl.querySelector('tr');
+        if (firstRow) {
+          var numCols = firstRow.querySelectorAll('th, td').length;
+          var cell = img.closest('th') || img.closest('td');
+          if (cell && !cell.style.width) cell.style.width = (100 / numCols) + '%';
+        }
+      }
+    } else {
+      if (maxDim > 1000) {
+        var ds = 1000 / maxDim;
+        displayW = Math.round(w * ds); displayH = Math.round(h * ds);
+      } else if (maxDim < 540) {
+        var us = 540 / maxDim;
+        displayW = Math.round(w * us); displayH = Math.round(h * us);
+        wrapper.classList.add('channel-small');
+      }
+      if (Math.min(displayW, displayH) > 500) {
+        var s = 500 / Math.min(displayW, displayH);
+        displayW = Math.round(displayW * s); displayH = Math.round(displayH * s);
+      }
+      if (tinyDim) {
+        if (displayW < 20) displayW = 20;
+        if (displayH < 20) displayH = 20;
+      }
+      if (displayW !== w && !ddsPixels) {
+        img.style.width = displayW + 'px';
+      }
     }
-    if (!inTable && Math.min(displayW, displayH) > 500) {
-      var s = 500 / Math.min(displayW, displayH);
-      displayW = Math.round(displayW * s); displayH = Math.round(displayH * s);
-    }
-    if (tinyDim) {
-      if (displayW < 20) displayW = 20;
-      if (displayH < 20) displayH = 20;
-    }
-    if (displayW !== w && !ddsPixels) {
-      img.style.width = displayW + 'px';
-    }
+    if (inTable && !ddsPixels) img.style.width = '100%';
 
     var tb = document.createElement('div');
     tb.className = 'channel-toolbar';
@@ -234,7 +248,8 @@
         var cv = wrapper.querySelector('canvas');
         if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; if (samplingNearest) cv.classList.add('sampling-nearest'); wrapper.appendChild(cv); }
         cv.width = curW; cv.height = curH;
-        if (displayW !== w) { cv.style.width = displayW + 'px'; }
+        if (inTable) { cv.style.width = '100%'; cv.style.height = 'auto'; }
+        else if (displayW !== w) { cv.style.width = displayW + 'px'; }
         cv.getContext('2d').putImageData(new ImageData(px, curW, curH), 0, 0);
       });
       tb.appendChild(b);
@@ -277,7 +292,10 @@
       var cv = document.createElement('canvas');
       cv.className = 'channel-canvas'; cv.width = w; cv.height = h;
       cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(straight), w, h), 0, 0);
-      if (displayW !== w || displayH !== h) {
+      if (inTable) {
+        cv.style.width = '100%';
+        cv.style.height = 'auto';
+      } else if (displayW !== w || displayH !== h) {
         cv.style.width = displayW + 'px';
         if (tinyDim) cv.style.height = displayH + 'px';
       }
@@ -309,6 +327,15 @@
     sizeBadge.className = 'channel-size-badge';
     sizeBadge.textContent = displayW + '\u00d7' + displayH + (displayW !== w || displayH !== h ? '  (' + w + '\u00d7' + h + ')' : '');
     wrapper.appendChild(sizeBadge);
+
+    // Timing badge (bottom-left corner)
+    if (img._t0) {
+      var ms = (performance.now() - img._t0).toFixed(0);
+      var timeBadge = document.createElement('div');
+      timeBadge.className = 'channel-time-badge';
+      timeBadge.textContent = ms + 'ms';
+      wrapper.appendChild(timeBadge);
+    }
 
     // Range badge (top-right, below toolbar)
     var ddsInfo = ddsCache.get(img.src);
@@ -479,17 +506,11 @@
         });
       }
       if (rd.array_size !== undefined) lines.push('array_size: ' + rd.array_size);
-      var totalMips;
       var cachedM = ddsCache.get(img.src);
       var ddsMips = cachedM && cachedM.dds ? cachedM.dds.mips : 1;
-      if (data.mip === -1) {
-        totalMips = ddsMips;
-      } else {
-        totalMips = parseInt(rd.mips) || ddsMips;
-      }
+      var totalMips = parseInt(rd.mips) || ddsMips;
       var maxMip = Math.max(0, totalMips - 1);
-      var curMipTop = (data.mip === -1 || parseInt(data.mip) >= totalMips) ? 0 : Math.max(0, Math.min(parseInt(data.mip) || 0, maxMip));
-      lines.push('mip: ' + curMipTop);
+      lines.push('mip: 0');
       if (ai.content || ai.pipeline_stage) {
         if (ai.pipeline_stage) lines.push('[AI] stage: ' + ai.pipeline_stage);
         if (ai.content) lines.push('[AI] ' + ai.content);
@@ -515,8 +536,8 @@
           if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; if (samplingNearest) cv.classList.add('sampling-nearest'); wrapper.appendChild(cv); }
           cv.width = mw; cv.height = mh;
           cv.getContext('2d').putImageData(new ImageData(px, mw, mh), 0, 0);
-          cv.style.width = displayW + 'px';
-          cv.style.height = tinyDim ? displayH + 'px' : 'auto';
+          cv.style.width = inTable ? '100%' : displayW + 'px';
+          cv.style.height = inTable ? 'auto' : (tinyDim ? displayH + 'px' : 'auto');
           straight = px;
           pxCache.set(img.src, px);
           curW = mw; curH = mh;
@@ -524,10 +545,13 @@
           if (activeBtn) activeBtn.click();
         }
       };
-      var curMip = curMipTop;
+      var curMip = 0;
 
       var rowStyle = 'display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:2px 3px;background:rgba(0,0,0,0.45);border-radius:3px;margin:1px 0;width:auto';
       if (totalMips > 1) {
+        var mipSpacer = document.createElement('div');
+        mipSpacer.style.cssText = 'flex-basis:100%;height:0';
+        tb.appendChild(mipSpacer);
         var mipRow = document.createElement('div');
         mipRow.style.cssText = rowStyle;
         var mipLabel = document.createElement('span');
@@ -550,6 +574,9 @@
         tb.appendChild(mipRow);
       }
       if (totalArray > 1) {
+        var arrSpacer = document.createElement('div');
+        arrSpacer.style.cssText = 'flex-basis:100%;height:0';
+        tb.appendChild(arrSpacer);
         var arrRow = document.createElement('div');
         arrRow.style.cssText = rowStyle;
         var arrLabel = document.createElement('span');
@@ -631,6 +658,7 @@
   function loadImage(img) {
     if (img.closest('.channel-container') || img.closest('a')) return;
     img._processed = true;
+    img._t0 = performance.now();
 
     // DDS
     if (/\.dds$/i.test(img.src)) {
@@ -641,6 +669,7 @@
         fetch(jsonUrl).then(function(r) { if (r.ok) return r.json(); }).then(function(d) { if (d) jsonCache.set(jsonUrl, d); }).catch(function(){});
       }
       img.style.outline = '1px dashed #555';
+      img._t0 = performance.now();
       fetch(img.src).then(function(r) { if (!r.ok) throw r.status; return r.arrayBuffer(); }).then(function(buf) {
         if (!buf) throw 'empty';
         var dds = DDS.parse(buf);
@@ -660,12 +689,13 @@
           var rdFmt = (jsonData.renderdoc || {}).format || '';
           if (/TYPELESS/i.test(rdFmt) && dds.fmt.family === 'R16F') typeOverride = 'R16';
         }
+        var targetDim = (img.closest('td') || img.closest('th')) ? 800 : 1000;
         decodeWorker.decode('dds', buf, function(result) {
           img.style.outline = '';
           if (!result.ok) { showErrorPlaceholder(img, dds.w, dds.h); return; }
           ddsCache.set(img.src, {dds:dds, mip0:result.pixels});
           processImage(img, result.w, result.h, result.pixels);
-        }, false, typeOverride);
+        }, false, typeOverride, targetDim);
       }).catch(function(e){ img.style.outline = ''; showErrorPlaceholder(img); });
       return;
     }
@@ -679,6 +709,7 @@
         fetch(jsonUrlExr).then(function(r) { if (r.ok) return r.json(); }).then(function(d) { if (d) jsonCache.set(jsonUrlExr, d); }).catch(function(){});
       }
       img.style.outline = '1px dashed #555';
+      img._t0 = performance.now();
       fetch(img.src).then(function(r) { if (!r.ok) throw r.status; return r.arrayBuffer(); }).then(function(buf) {
         if (!buf) throw 'empty';
         decodeWorker.decode('exr', buf, function(result) {

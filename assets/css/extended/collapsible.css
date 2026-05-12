@@ -53,9 +53,38 @@
   margin-left: 0.5em;
 }
 
-/* h3 subsection indent — heading stays flush, body content indented */
+/* h3 subsection — collapsible, heading stays flush, body content indented */
 .collapse-body .subsection {
   margin: 0.8em 0;
+}
+
+.collapse-body .subsection > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  user-select: none;
+}
+
+.collapse-body .subsection > summary::-webkit-details-marker { display: none; }
+.collapse-body .subsection > summary::marker { content: ""; }
+
+.collapse-body .subsection > summary::before {
+  content: "\25B8";
+  display: inline-block;
+  transition: transform 0.2s ease;
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+.collapse-body .subsection[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.collapse-body .subsection h3 {
+  margin: 0;
+  display: inline;
 }
 
 .collapse-body .subsection-body {
@@ -63,8 +92,51 @@
   border-left: 2px solid var(--border);
 }
 
-.collapse-body .subsection h3 {
-  margin-top: 0;
+/* h4 subsubsection — same collapsible pattern as h3 */
+.collapse-body .subsubsection,
+.subsection-body .subsubsection {
+  margin: 0.6em 0;
+}
+
+.collapse-body .subsubsection > summary,
+.subsection-body .subsubsection > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  user-select: none;
+}
+
+.collapse-body .subsubsection > summary::-webkit-details-marker,
+.subsection-body .subsubsection > summary::-webkit-details-marker { display: none; }
+.collapse-body .subsubsection > summary::marker,
+.subsection-body .subsubsection > summary::marker { content: ""; }
+
+.collapse-body .subsubsection > summary::before,
+.subsection-body .subsubsection > summary::before {
+  content: "\25B8";
+  display: inline-block;
+  transition: transform 0.2s ease;
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+.collapse-body .subsubsection[open] > summary::before,
+.subsection-body .subsubsection[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.collapse-body .subsubsection h4,
+.subsection-body .subsubsection h4 {
+  margin: 0;
+  display: inline;
+}
+
+.collapse-body .subsubsection-body,
+.subsection-body .subsubsection-body {
+  padding-left: 1.5em;
+  border-left: 2px solid var(--border);
 }
 
 .post-content details.collapsible-section[open] {

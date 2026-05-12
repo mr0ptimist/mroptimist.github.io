@@ -90,7 +90,7 @@
   links.forEach(function(link) {
     var li = link.closest('li');
     if (li && li.style.display === 'none') return;
-    var id = link.getAttribute('href').slice(1);
+    var id = decodeURIComponent(link.getAttribute('href').slice(1));
     var el = document.getElementById(id);
     if (el) headings.push({el: el, link: link});
   });
@@ -99,7 +99,7 @@
     var scrollY = window.scrollY + 100;
     var active = null;
     for (var i = headings.length - 1; i >= 0; i--) {
-      if (headings[i].el.offsetTop <= scrollY) {
+      if (headings[i].el.getBoundingClientRect().top + window.pageYOffset <= scrollY) {
         active = headings[i];
         break;
       }
@@ -195,7 +195,7 @@ window.ImageViewerConfig = { workingDir: "{{ hugo.WorkingDir }}" };
 <script src="{{ "js/worker-shared.js" | relURL }}"></script>
 <script src="{{ "js/dds-parser.js" | relURL }}"></script>
 <script src="{{ "js/exr-parser.js" | relURL }}"></script>
-<script src="{{ "js/image-viewer.js" | relURL }}"></script>
+<script src="{{ "js/image-viewer.js" | relURL }}?v=10"></script>
 
 <script>
 (function(){
@@ -231,14 +231,17 @@ window.ImageViewerConfig = { workingDir: "{{ hugo.WorkingDir }}" };
     details.appendChild(body);
   });
 
-  // Wrap h3 sections for visual indentation
+  // Wrap h3 sections as collapsible subsections
   postContent.querySelectorAll('details.collapsible-section > .collapse-body').forEach(function(body) {
     var h3s = body.querySelectorAll(':scope > h3');
     h3s.forEach(function(h3) {
-      var wrap = document.createElement('div');
+      var wrap = document.createElement('details');
       wrap.className = 'subsection';
+      wrap.open = true;
       h3.parentNode.insertBefore(wrap, h3);
-      wrap.appendChild(h3);
+      var summary = document.createElement('summary');
+      wrap.appendChild(summary);
+      summary.appendChild(h3);
       var inner = document.createElement('div');
       inner.className = 'subsection-body';
       wrap.appendChild(inner);
@@ -253,22 +256,47 @@ window.ImageViewerConfig = { workingDir: "{{ hugo.WorkingDir }}" };
     });
   });
 
+  // Wrap h4 sections as collapsible subsubsections
+  postContent.querySelectorAll('.collapse-body .subsection-body, .collapse-body').forEach(function(container) {
+    var h4s = container.querySelectorAll(':scope > h4');
+    h4s.forEach(function(h4) {
+      var wrap = document.createElement('details');
+      wrap.className = 'subsubsection';
+      wrap.open = true;
+      h4.parentNode.insertBefore(wrap, h4);
+      var summary = document.createElement('summary');
+      wrap.appendChild(summary);
+      summary.appendChild(h4);
+      var inner = document.createElement('div');
+      inner.className = 'subsubsection-body';
+      wrap.appendChild(inner);
+      var sib = wrap.nextSibling;
+      while (sib) {
+        var cur = sib;
+        sib = sib.nextSibling;
+        if (cur.nodeType === 1 && /^H[2-4]$/.test(cur.tagName)) break;
+        if (cur.nodeType === 1 && cur.classList && (cur.classList.contains('subsection') || cur.classList.contains('subsubsection'))) break;
+        inner.appendChild(cur);
+      }
+    });
+  });
+
   // Restore collapse state from sessionStorage
   var path = location.pathname;
   var states = JSON.parse(sessionStorage.getItem('collapse_state') || '{}');
   if (states[path]) {
-    var sections = postContent.querySelectorAll('details.collapsible-section');
+    var allDetails = postContent.querySelectorAll('details.collapsible-section, details.subsection, details.subsubsection');
     states[path].forEach(function(open, i) {
-      if (sections[i]) sections[i].open = open;
+      if (allDetails[i]) allDetails[i].open = open;
     });
   }
 
-  // Save collapse state on toggle
+  // Save collapse state on toggle (h2, h3, h4)
   document.addEventListener('toggle', function(e) {
-    if (e.target.classList && e.target.classList.contains('collapsible-section')) {
-      var sections = postContent.querySelectorAll('details.collapsible-section');
+    if (e.target.classList && (e.target.classList.contains('collapsible-section') || e.target.classList.contains('subsection') || e.target.classList.contains('subsubsection'))) {
+      var allDetails = postContent.querySelectorAll('details.collapsible-section, details.subsection, details.subsubsection');
       var state = [];
-      sections.forEach(function(s) { state.push(s.open); });
+      allDetails.forEach(function(s) { state.push(s.open); });
       var all = JSON.parse(sessionStorage.getItem('collapse_state') || '{}');
       all[path] = state;
       sessionStorage.setItem('collapse_state', JSON.stringify(all));

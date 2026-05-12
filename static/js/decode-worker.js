@@ -16,7 +16,7 @@
 // =============================================================================
 (function(){
   var base = self.location.href.replace(/[^/]+$/, '');
-  importScripts(base + 'worker-shared.js?v=4', base + 'exr-parser.js');
+  importScripts(base + 'worker-shared.js?v=10', base + 'exr-parser.js');
 
   var S = self.ImageCodecShared;
   if (!S) throw new Error('ImageCodecShared not available in worker');
@@ -44,10 +44,14 @@
     return { w:w, h:h, fmt:fmt, data:mip0_data };
   }
 
-  function decodeDDS(dds) {
+  function decodeDDS(dds, step) {
     var w = dds.w, h = dds.h, data = dds.data, fam = dds.fmt.family;
-    var px = new Uint8ClampedArray(w * h * 4);
+    step = step || 1;
+    var outW = step > 1 ? Math.ceil(w / step) : w;
+    var outH = step > 1 ? Math.ceil(h / step) : h;
+    var px = new Uint8ClampedArray(outW * outH * 4);
 
+    if (step === 1) {
     if (fam==='RGBA8') { for (var j=0;j<px.length;j++) px[j]=data[j]; return px; }
     if (fam==='BGRA8') {
       var sw = dds.fmt.swizzle || 'bgra';
@@ -183,7 +187,155 @@
       return S.decodeBC(data, w, h, dds.fmt);
     }
 
-    // BC6H/BC7: no WebGL in worker → return null (main thread will fall back)
+    // BC6H/BC7: no WebGL in worker → return null
+    if (fam==='BC6H'||fam==='BC7') return null;
+
+    // Fallback: raw copy for unrecognized uncompressed formats (e.g. R32_UINT)
+    for (var j=0;j<Math.min(px.length,data.length);j++) px[j]=data[j];
+    return px;
+    } // end if (step === 1)
+
+    // === step > 1: subsampled decode ===
+
+    if (fam==='RGBA8') {
+      for (var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=(oy*step*w+ox*step)*4,di=(oy*outW+ox)*4;
+        px[di]=data[si];px[di+1]=data[si+1];px[di+2]=data[si+2];px[di+3]=data[si+3];
+      } return px;
+    }
+    if (fam==='BGRA8') {
+      var sw=dds.fmt.swizzle||'bgra';
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=(oy*step*w+ox*step)*4,di=(oy*outW+ox)*4;
+        if(sw==='argb'){px[di]=data[si+1];px[di+1]=data[si+2];px[di+2]=data[si+3];px[di+3]=data[si];}
+        else if(sw==='abgr'){px[di]=data[si+3];px[di+1]=data[si+2];px[di+2]=data[si+1];px[di+3]=data[si];}
+        else{px[di]=data[si+2];px[di+1]=data[si+1];px[di+2]=data[si];px[di+3]=data[si+3];}
+      } return px;
+    }
+    if (fam==='R10G10B10A2') {
+      var s32=new Uint32Array(data.buffer,data.byteOffset,w*h);
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,p=s32[si];
+        px[di]=(p&0x3FF)*255/1023|0;px[di+1]=((p>>>10)&0x3FF)*255/1023|0;
+        px[di+2]=((p>>>20)&0x3FF)*255/1023|0;px[di+3]=(p>>>30)*255/3|0;
+      } return px;
+    }
+    if (fam==='R11G11B10') {
+      var s32b=new Uint32Array(data.buffer,data.byteOffset,w*h);
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,p=s32b[si];
+        var r=S.h2f_r11g11b10(p&0x7FF),g=S.h2f_r11g11b10((p>>>11)&0x7FF),b=S.h2f_r10((p>>>22)&0x3FF);
+        px[di]=Math.min(255,Math.max(0,r*255|0));px[di+1]=Math.min(255,Math.max(0,g*255|0));
+        px[di+2]=Math.min(255,Math.max(0,b*255|0));px[di+3]=255;
+      } return px;
+    }
+    if (fam==='R8G8') {
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
+        px[di]=data[si*2];px[di+1]=data[si*2+1];px[di+2]=0;px[di+3]=255;
+      } return px;
+    }
+    if (fam==='R8G8S') {
+      var n=w*h,fminR=1e9,fmaxR=-1e9,fminG=1e9,fmaxG=-1e9;
+      for(var j=0;j<n;j++){var sr=data[j*2]>127?(data[j*2]-256)/127.0:data[j*2]/127.0,sg=data[j*2+1]>127?(data[j*2+1]-256)/127.0:data[j*2+1]/127.0;if(sr<fminR)fminR=sr;if(sr>fmaxR)fmaxR=sr;if(sg<fminG)fminG=sg;if(sg>fmaxG)fmaxG=sg;}
+      var frR=fmaxR>fminR?255/(fmaxR-fminR):1,frG=fmaxG>fminG?255/(fmaxG-fminG):1;
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
+        var sr=data[si*2]>127?(data[si*2]-256)/127.0:data[si*2]/127.0,sg=data[si*2+1]>127?(data[si*2+1]-256)/127.0:data[si*2+1]/127.0;
+        px[di]=(sr-fminR)*frR|0;px[di+1]=(sg-fminG)*frG|0;px[di+2]=0;px[di+3]=255;
+      } return px;
+    }
+    if (fam==='R8') {
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,v=data[si];
+        px[di]=v;px[di+1]=v;px[di+2]=v;px[di+3]=255;
+      } return px;
+    }
+    if (fam==='R8S') {
+      var n=w*h,fmin=1e9,fmax=-1e9;
+      for(var j=0;j<n;j++){var sv=data[j]>127?(data[j]-256)/127.0:data[j]/127.0;if(sv<fmin)fmin=sv;if(sv>fmax)fmax=sv;}
+      var fr=fmax>fmin?255/(fmax-fmin):1;
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,sv=data[si]>127?(data[si]-256)/127.0:data[si]/127.0;
+        var vv=(sv-fmin)*fr|0;px[di]=vv;px[di+1]=vv;px[di+2]=vv;px[di+3]=255;
+      } return px;
+    }
+    if (fam==='R16G16') {
+      var s16=new Uint16Array(data.buffer,data.byteOffset,w*h*2);
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
+        px[di]=s16[si*2]*255/65535|0;px[di+1]=s16[si*2+1]*255/65535|0;px[di+2]=0;px[di+3]=255;
+      } return px;
+    }
+    if (fam==='R16G16F') {
+      var s16f=new Uint16Array(data.buffer,data.byteOffset,w*h*2),fminR=1e9,fmaxR=-1e9,fminG=1e9,fmaxG=-1e9;
+      for(var j=0;j<w*h;j++){var fr=S.halfToFloat(s16f[j*2]),fg=S.halfToFloat(s16f[j*2+1]);if(isFinite(fr)){if(fr<fminR)fminR=fr;if(fr>fmaxR)fmaxR=fr;}if(isFinite(fg)){if(fg<fminG)fminG=fg;if(fg>fmaxG)fmaxG=fg;}}
+      var frR=fmaxR>fminR?255/(fmaxR-fminR):1,frG=fmaxG>fminG?255/(fmaxG-fminG):1;
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
+        px[di]=(S.halfToFloat(s16f[si*2])-fminR)*frR|0;px[di+1]=(S.halfToFloat(s16f[si*2+1])-fminG)*frG|0;px[di+2]=0;px[di+3]=255;
+      } return px;
+    }
+    if (fam==='R16') {
+      var su=new Uint16Array(data.buffer,data.byteOffset,w*h),mn=65535,mx=0;
+      for(var j=0;j<su.length;j++){if(su[j]<mn)mn=su[j];if(su[j]>mx)mx=su[j];}
+      var rng=mx>mn?255/(mx-mn):1;
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,vv=(su[si]-mn)*rng|0;
+        px[di]=vv;px[di+1]=vv;px[di+2]=vv;px[di+3]=255;
+      } return px;
+    }
+    if (fam==='R16F') {
+      var su=new Uint16Array(data.buffer,data.byteOffset,w*h),fmn=1e9,fmx=-1e9;
+      for(var j=0;j<su.length;j++){var f=S.halfToFloat(su[j]);if(isFinite(f)){if(f<fmn)fmn=f;if(f>fmx)fmx=f;}}
+      var fr=fmx>fmn?255/(fmx-fmn):1;
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,vv=(S.halfToFloat(su[si])-fmn)*fr|0;
+        px[di]=vv;px[di+1]=vv;px[di+2]=vv;px[di+3]=255;
+      } return px;
+    }
+    if (fam==='D32S8') {
+      var allF=new Float32Array(data.buffer,data.byteOffset,w*h*2),dmn=1e9,dmx=-1e9,n=w*h;
+      for(var j=0;j<n;j++){var dv=allF[j*2];if(isFinite(dv)){if(dv<dmn)dmn=dv;if(dv>dmx)dmx=dv;}}
+      var dr=dmx>dmn?255/(dmx-dmn):1;
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,dv=isFinite(allF[si*2])?(allF[si*2]-dmn)*dr|0:0;
+        px[di]=dv;px[di+1]=dv;px[di+2]=dv;px[di+3]=255;
+      } return px;
+    }
+    if (fam==='R32F') {
+      var f32w=new Float32Array(data.buffer,data.byteOffset,w*h),mn32=1e9,mx32=-1e9;
+      for(var j=0;j<f32w.length;j++){var v=f32w[j];if(isFinite(v)){if(v<mn32)mn32=v;if(v>mx32)mx32=v;}}
+      var rng32=mx32>mn32?255/(mx32-mn32):1;
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,v=isFinite(f32w[si])?(f32w[si]-mn32)*rng32|0:0;
+        px[di]=v;px[di+1]=v;px[di+2]=v;px[di+3]=255;
+      } return px;
+    }
+    if (fam==='RGBA16') {
+      var u16w=new Uint16Array(data.buffer,data.byteOffset,w*h*4);
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
+        px[di]=u16w[si*4]*255/65535|0;px[di+1]=u16w[si*4+1]*255/65535|0;
+        px[di+2]=u16w[si*4+2]*255/65535|0;px[di+3]=u16w[si*4+3]*255/65535|0;
+      } return px;
+    }
+    if (fam==='RGBA64F') {
+      var u16hw=new Uint16Array(data.buffer,data.byteOffset,w*h*4),fmnw=1e9,fmxw=-1e9;
+      for(var j=0;j<u16hw.length;j++){var f=S.halfToFloat(u16hw[j]);if(isFinite(f)){if(f<fmnw)fmnw=f;if(f>fmxw)fmxw=f;}}
+      var frw=fmxw>fmnw?255/(fmxw-fmnw):1;
+      for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
+        px[di]=(S.halfToFloat(u16hw[si*4])-fmnw)*frw|0;px[di+1]=(S.halfToFloat(u16hw[si*4+1])-fmnw)*frw|0;
+        px[di+2]=(S.halfToFloat(u16hw[si*4+2])-fmnw)*frw|0;px[di+3]=255;
+      } return px;
+    }
+
+    // BC1-5 with step>1: block-level skip sampling
+    if (fam==='BC1'||fam==='BC3'||fam==='BC4'||fam==='BC5') {
+      return S.decodeBC(data, w, h, dds.fmt, step);
+    }
+
     return null;
   }
 
@@ -195,8 +347,17 @@
       var dds = parseDDS(msg.buffer);
       if (dds) {
         if (msg.typeOverride) dds.fmt.type = msg.typeOverride;
-        var px = decodeDDS(dds);
-        if (px) result = {w:dds.w, h:dds.h, pixels:px};
+        var step = 1;
+        if (msg.targetDim && !/UINT|INT|SINT/i.test(dds.fmt.type)) {
+          var maxDim = Math.max(dds.w, dds.h);
+          if (maxDim > 1024) step = Math.ceil(maxDim / msg.targetDim);
+        }
+        var px = decodeDDS(dds, step);
+        if (px) {
+          var rw = step > 1 ? Math.ceil(dds.w / step) : dds.w;
+          var rh = step > 1 ? Math.ceil(dds.h / step) : dds.h;
+          result = {w: rw, h: rh, pixels: px};
+        }
       }
     } else if (msg.type === 'exr') {
       var exr = EXR.parse(msg.buffer);

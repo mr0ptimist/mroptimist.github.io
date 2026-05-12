@@ -228,7 +228,7 @@ details.toc summary::-webkit-details-marker {
   }
 
   details.toc .inner ul {
-    padding-left: 8px;
+    padding-left: 24px;
     margin: 1px 0;
     list-style: none;
   }
@@ -255,3 +255,13 @@ details.toc summary::-webkit-details-marker {
     font-weight: bold;
   }
 }
+
+/* h4/h5 font size override — theme default 16px = body text, too small */
+.md-content h3 { margin-top: 36px; }
+.md-content h4 { font-size: 22px; margin-top: 32px; }
+.md-content h5 { font-size: 18px; margin-top: 28px; }
+.md-content h6 { font-size: 14px; margin-top: 24px; }
+
+/* TOC nested item indent (works at all widths) */
+details.toc .inner ul ul,
+details.toc .inner ul ul ul { padding-left: 24px; }
