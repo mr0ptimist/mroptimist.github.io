@@ -105,7 +105,7 @@
     var nextWorker = 0;
 
     var myScript = document.querySelector('script[src*="image-viewer.js"]');
-    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=13') : '/js/decode-worker.js?v=13';
+    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=14') : '/js/decode-worker.js?v=14';
 
     for (var i = 0; i < NUM_WORKERS; i++) {
       var w = new Worker(workerUrl);
@@ -148,15 +148,16 @@
   // Channel map from DXGI format code
   var DXGI_CHANNELS = {
     2:'RGBA', 6:'RGB', 10:'RGBA', 11:'RGBA', 13:'RGBA', 16:'RG',
-    20:'R', 24:'RGBA', 26:'RGB', 27:'RGBA', 28:'RGBA', 29:'RGBA', 45:'R', 87:'RGBA',
-    34:'RG', 35:'RG', 36:'RG',
+    20:'R', 24:'RGBA', 26:'RGB', 27:'RGBA', 28:'RGBA', 29:'RGBA', 31:'RGBA', 45:'R', 87:'RGBA',
+    34:'RG', 35:'RG', 36:'RG', 37:'RG',
     40:'R', 41:'R',
-    49:'RG', 68:'RGB', 69:'RGB',
-    53:'R', 54:'R', 55:'R', 56:'R', 57:'R',
+    49:'RG', 51:'RG', 68:'RGB', 69:'RGB',
+    53:'R', 54:'R', 55:'R', 56:'R', 57:'R', 58:'R',
     61:'R', 65:'R', 67:'RGB',
     70:'RGB', 71:'RGB', 72:'RGB',
     73:'RGBA', 74:'RGBA', 75:'RGBA', 76:'RGBA', 77:'RGBA', 78:'RGBA', 79:'RGBA',
     80:'R', 81:'R', 82:'RG', 83:'RG', 84:'RG',
+    85:'RGB', 86:'RGBA',
     94:'RGB', 95:'RGB', 96:'RGB',
     97:'RGBA', 98:'RGBA', 99:'RGBA'
   };
@@ -248,7 +249,7 @@
         var cv = wrapper.querySelector('canvas');
         if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; if (samplingNearest) cv.classList.add('sampling-nearest'); wrapper.appendChild(cv); }
         cv.width = curW; cv.height = curH;
-        if (inTable) { cv.style.width = '100%'; cv.style.height = 'auto'; }
+        if (inTable) { cv.style.width = '100%'; cv.style.height = is1D ? '30px' : 'auto'; }
         else if (displayW !== w) { cv.style.width = displayW + 'px'; }
         cv.getContext('2d').putImageData(new ImageData(px, curW, curH), 0, 0);
       });
@@ -288,16 +289,18 @@
     tb.appendChild(bottomRow);
 
     // DDS/EXR: create canvas immediately
+    var is1D = h === 1 && ddsPixels && ddsCache.get(img.src) && ddsCache.get(img.src).dds && ddsCache.get(img.src).dds.resDim === 2;
+    if (is1D) displayH = 30;
     if (ddsPixels) {
       var cv = document.createElement('canvas');
       cv.className = 'channel-canvas'; cv.width = w; cv.height = h;
       cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(straight), w, h), 0, 0);
       if (inTable) {
         cv.style.width = '100%';
-        cv.style.height = 'auto';
+        cv.style.height = is1D ? '30px' : 'auto';
       } else if (displayW !== w || displayH !== h) {
         cv.style.width = displayW + 'px';
-        if (tinyDim) cv.style.height = displayH + 'px';
+        if (tinyDim || is1D) cv.style.height = displayH + 'px';
       }
       var parent = img.parentNode;
       if (parent.tagName === 'P') {
@@ -513,6 +516,7 @@
       if (rd.array_size !== undefined) lines.push('array_size: ' + rd.array_size);
       var alphaNames = ['unknown','straight','premultiplied','opaque','custom'];
       if (cachedDds && cachedDds.dds && cachedDds.dds.alphaMode) lines.push('alpha: ' + (alphaNames[cachedDds.dds.alphaMode] || cachedDds.dds.alphaMode));
+      if (cachedDds && cachedDds.dds && cachedDds.dds.resDim === 2) lines.push('type: 1D texture');
       var cachedM = ddsCache.get(img.src);
       var ddsMips = cachedM && cachedM.dds ? cachedM.dds.mips : 1;
       var totalMips = parseInt(rd.mips) || ddsMips;
@@ -544,7 +548,7 @@
           cv.width = mw; cv.height = mh;
           cv.getContext('2d').putImageData(new ImageData(px, mw, mh), 0, 0);
           cv.style.width = inTable ? '100%' : displayW + 'px';
-          cv.style.height = inTable ? 'auto' : (tinyDim ? displayH + 'px' : 'auto');
+          cv.style.height = inTable ? (is1D ? '30px' : 'auto') : (tinyDim || is1D ? displayH + 'px' : 'auto');
           straight = px;
           pxCache.set(img.src, px);
           curW = mw; curH = mh;

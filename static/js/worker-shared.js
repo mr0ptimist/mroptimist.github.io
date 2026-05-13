@@ -129,6 +129,7 @@
     if (type.startsWith('BC5')) return 'BC5';
     if (type.startsWith('BC6H')) return 'BC6H';
     if (type.startsWith('BC7')) return 'BC7';
+    if (type.startsWith('R8G8B8A8')&&type.indexOf('SNORM')>=0) return 'RGBA8S';
     if (type.startsWith('R8G8B8A8')) return 'RGBA8';
     if (type.startsWith('B8G8R8')) return 'BGRA8';
     if (type.startsWith('R10G10B10A2')) return 'R10G10B10A2';
@@ -140,18 +141,23 @@
     if (type.startsWith('R32G32B32')) return 'RGB96F';
     if (type.startsWith('R32G32')&&type.indexOf('FLOAT')>=0) return 'R32G32F';
     if (type.startsWith('R16G16')&&type.indexOf('FLOAT')>=0) return 'R16G16F';
+    if (type.startsWith('R16G16')&&type.indexOf('SNORM')>=0) return 'R16G16S';
     if (type.startsWith('R16G16')) return 'R16G16';
     if (type.startsWith('R8G8_B8G8')) return 'RGBG';
     if (type.startsWith('G8R8_G8B8')) return 'GRGB';
     if (type.startsWith('R8G8')) return type.indexOf('SNORM')>=0 ? 'R8G8S' : 'R8G8';
     if (type.startsWith('B8G8R8')) return 'BGRA8';
     if (type.startsWith('R16_FLOAT')) return 'R16F';
+    if ((type.startsWith('R16_')||type.startsWith('D16_'))&&type.indexOf('SNORM')>=0) return 'R16S';
     if ((type.startsWith('R16_')||type.startsWith('D16_'))&&type.indexOf('FLOAT')<0) return 'R16';
     if (type.startsWith('R8_')||type==='A8_UNORM') return type.indexOf('SNORM')>=0 ? 'R8S' : 'R8';
     if (type.startsWith('R32_FLOAT')||type==='D32_FLOAT') return 'R32F';
     if (type.startsWith('D32_FLOAT_S8')) return 'D32S8';
     if (type.startsWith('D24_')) return 'D24S8';
     if (type.startsWith('R9G9B9E5')) return 'RGB9E5';
+    if (type.startsWith('B5G6R5')) return 'B5G6R5';
+    if (type.startsWith('B5G5R5A1')) return 'B5G5R5A1';
+    if (type==='A4R4G4B4') return 'ARGB4';
     return type;
   }
 
@@ -194,14 +200,36 @@
       case 116: return { fourCC:fourCC, dxgi:2,  type:'R32G32B32A32_FLOAT', family:'RGBA128F', isComp:false, bpp:128 };
     }
     var bc = r32(view,88), rmask = r32(view,92), gmask = r32(view,96), bmask = r32(view,100), amask = r32(view,104);
+    var pfflags = r32(view,80);
+    // --- 32-bit legacy formats ---
+    if (bc===32 && rmask===0x3FF00000 && gmask===0xFFC00 && bmask===0x3FF && amask===0xC0000000)
+      return { fourCC:fourCC, dxgi:24, type:'R10G10B10A2_UNORM', family:'R10G10B10A2', isComp:false, bpp:32, swapRB:true };
+    if (bc===32 && rmask===0xFF && gmask===0xFF00 && bmask===0xFF0000 && amask===0xFF000000 && (pfflags & 0x80000))
+      return { fourCC:fourCC, dxgi:31, type:'R8G8B8A8_SNORM', family:'RGBA8S', isComp:false, bpp:32 };
     if (bc===32 && rmask===0xFF && gmask===0xFF00 && bmask===0xFF0000 && amask===0xFF000000)
       return { fourCC:fourCC, dxgi:28, type:'R8G8B8A8_UNORM', family:'RGBA8', isComp:false, bpp:32 };
     if (bc===32 && rmask===0x3FF && gmask===0xFFC00 && bmask===0x3FF00000)
       return { fourCC:fourCC, dxgi:24, type:'R10G10B10A2_UNORM', family:'R10G10B10A2', isComp:false, bpp:32 };
+    if (bc===32 && (rmask===0xFFFF||rmask===0x0000FFFF) && (gmask===0xFFFF0000||gmask===0xFFFF0000) && (pfflags & 0x80000))
+      return { fourCC:fourCC, dxgi:37, type:'R16G16_SNORM', family:'R16G16S', isComp:false, bpp:32 };
     if (bc===32 && (rmask===0xFFFF||rmask===0x0000FFFF) && (gmask===0xFFFF0000||gmask===0xFFFF0000))
       return { fourCC:fourCC, dxgi:35, type:'R16G16_UNORM', family:'R16G16', isComp:false, bpp:32 };
+    // --- 16-bit legacy formats ---
+    if (bc===16 && rmask===0xF800 && gmask===0x7E0 && bmask===0x1F)
+      return { fourCC:fourCC, dxgi:85, type:'B5G6R5_UNORM', family:'B5G6R5', isComp:false, bpp:16 };
+    if (bc===16 && rmask===0x7C00 && gmask===0x3E0 && bmask===0x1F && amask===0x8000)
+      return { fourCC:fourCC, dxgi:86, type:'B5G5R5A1_UNORM', family:'B5G5R5A1', isComp:false, bpp:16 };
+    if (bc===16 && rmask===0xF00 && gmask===0xF0 && bmask===0xF && amask===0xF000)
+      return { fourCC:fourCC, dxgi:0, type:'A4R4G4B4', family:'ARGB4', isComp:false, bpp:16 };
+    if (bc===16 && rmask===0xFF && gmask===0 && bmask===0 && amask===0xFF00)
+      return { fourCC:fourCC, dxgi:49, type:'R8G8_UNORM', family:'R8G8', isComp:false, bpp:16 };
+    if (bc===16 && rmask===0xFF && gmask===0xFF00 && (pfflags & 0x80000))
+      return { fourCC:fourCC, dxgi:51, type:'R8G8_SNORM', family:'R8G8S', isComp:false, bpp:16 };
     if (bc===16 && rmask===0xFF && gmask===0xFF00)
       return { fourCC:fourCC, dxgi:49, type:'R8G8_UNORM', family:'R8G8', isComp:false, bpp:16 };
+    // --- 8-bit legacy formats ---
+    if (bc===8 && amask===0xFF && !rmask && !gmask && !bmask)
+      return { fourCC:fourCC, dxgi:65, type:'A8_UNORM', family:'R8', isComp:false, bpp:8 };
     if (bc===8 && rmask===0xFF)
       return { fourCC:fourCC, dxgi:61, type:'R8_UNORM', family:'R8', isComp:false, bpp:8 };
     if (bc===32 && amask===0xFF && rmask===0xFF00 && gmask===0xFF0000 && bmask===0xFF000000)
