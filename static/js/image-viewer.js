@@ -105,7 +105,7 @@
     var nextWorker = 0;
 
     var myScript = document.querySelector('script[src*="image-viewer.js"]');
-    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=11') : '/js/decode-worker.js?v=11';
+    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=12') : '/js/decode-worker.js?v=12';
 
     for (var i = 0; i < NUM_WORKERS; i++) {
       var w = new Worker(workerUrl);
@@ -340,8 +340,9 @@
     // Range badge (top-right, below toolbar)
     var ddsInfo = ddsCache.get(img.src);
     var fam = ddsInfo && ddsInfo.dds ? ddsInfo.dds.fmt.family : '';
+    var ddsType = ddsInfo && ddsInfo.dds ? ddsInfo.dds.fmt.type : '';
     var rangeText = '';
-    if (fam==='R8S'||fam==='R8G8S'||fam==='RGBA16S'||fam.indexOf('SNORM')>=0) rangeText = '[-1, 1]';
+    if (fam==='R8S'||fam==='R8G8S'||fam==='RGBA16S'||ddsType.indexOf('SNORM')>=0) rangeText = '[-1, 1]';
     else if (fam==='R16F'||fam==='R32F'||fam==='R11G11B10'||fam==='RGBA64F'||fam==='RGBA128F'||fam==='RGB96F'||fam==='BC6H'||fam==='R16G16F'||fam==='R32G32F'||fam==='RGB9E5') rangeText = '[0, \u221E)';
     else if (fam==='R8_UINT'||fam.indexOf('UINT')>=0) rangeText = '[0, 255]';
     else if (fam.indexOf('BC')===0||fam.indexOf('R8')===0||fam.indexOf('R16')===0||fam.indexOf('RGBA')===0||fam.indexOf('BGRA')===0||fam==='R10G10B10A2'||fam==='D32S8') rangeText = '[0, 1]';
@@ -374,17 +375,21 @@
       if (wImg && !cv) { ctx.canvas.width = wImg.naturalWidth; ctx.canvas.height = wImg.naturalHeight; ctx.drawImage(wImg, 0, 0); }
       try {
         var d = ctx.getImageData(Math.min(px, src.width-1), Math.min(py, src.height-1), 1, 1).data;
-        var isFloat = false;
+        var isFloat = false, isSNorm = false;
         var ddsC = ddsCache.get(_img.src);
         var exrC = exrCache.get(_img.src);
         if (ddsC && ddsC.dds) {
           var fam = ddsC.dds.fmt.family;
+          var ddsType2 = ddsC.dds.fmt.type || '';
           isFloat = fam==='R16F'||fam==='R32F'||fam==='BC6H'||fam==='R11G11B10'||fam==='R16G16F'||fam==='RGB9E5'||fam==='RGBA128F'||fam==='RGB96F'||fam==='RGBA64F'||fam==='R32G32F';
+          isSNorm = ddsType2.indexOf('SNORM')>=0;
         } else if (exrC) {
           isFloat = true;
         }
         var txt;
-        if (isFloat) {
+        if (isSNorm) {
+          txt = 'R:' + (d[0]/127.5-1).toFixed(3) + ' G:' + (d[1]/127.5-1).toFixed(3) + ' B:' + (d[2]/127.5-1).toFixed(3) + ' A:' + d[3] + ' @' + px + ',' + py;
+        } else if (isFloat) {
           txt = 'R:' + (d[0]/255).toFixed(3) + ' G:' + (d[1]/255).toFixed(3) + ' B:' + (d[2]/255).toFixed(3) + ' A:' + (d[3]/255).toFixed(3) + ' @' + px + ',' + py;
         } else {
           txt = 'R:' + d[0] + ' G:' + d[1] + ' B:' + d[2] + ' A:' + d[3] + ' @' + px + ',' + py;

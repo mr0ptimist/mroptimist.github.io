@@ -235,9 +235,9 @@
   // ---- BC4 block decode (4×4 → grayscale RGBA8) ----
   function bc4Block(src, off, dst) {
     var r0=src[off], r1=src[off+1];
-    var bits=0; for(var k=0;k<6;k++) bits|=src[off+2+k]<<(k*8);
+    var bLo=src[off+2]|(src[off+3]<<8)|(src[off+4]<<16)|(src[off+5]<<24), bHi=src[off+6]|(src[off+7]<<8);
     for(var y=0;y<4;y++) for(var x=0;x<4;x++) {
-      var idx=(bits>>(3*(y*4+x)))&7, p=(y*4+x)*4, v;
+      var bp=3*(y*4+x), idx=bp<32?(bLo>>>bp)&7:(bHi>>>(bp-32))&7, p=(y*4+x)*4, v;
       if (idx===0) v=r0; else if (idx===1) v=r1;
       else if (r0>r1) v=((8-idx)*r0+(idx-1)*r1)/7|0;
       else if (idx<6) v=((6-idx)*r0+(idx-1)*r1)/5|0;
@@ -249,9 +249,9 @@
   // BC4 single-channel variant: writes to dst[p+ch]
   function bc4Chan(src, off, dst, ch) {
     var r0=src[off], r1=src[off+1];
-    var bits=0; for(var k=0;k<6;k++) bits|=src[off+2+k]<<(k*8);
+    var bLo=src[off+2]|(src[off+3]<<8)|(src[off+4]<<16)|(src[off+5]<<24), bHi=src[off+6]|(src[off+7]<<8);
     for(var y=0;y<4;y++) for(var x=0;x<4;x++) {
-      var idx=(bits>>(3*(y*4+x)))&7, p=(y*4+x)*4;
+      var bp=3*(y*4+x), idx=bp<32?(bLo>>>bp)&7:(bHi>>>(bp-32))&7, p=(y*4+x)*4;
       if (idx===0) dst[p+ch]=r0; else if (idx===1) dst[p+ch]=r1;
       else if(r0>r1) dst[p+ch]=((8-idx)*r0+(idx-1)*r1)/7|0;
       else if(idx<6) dst[p+ch]=((6-idx)*r0+(idx-1)*r1)/5|0;
@@ -262,6 +262,43 @@
   // ---- BC5 block decode (two BC4 blocks: R + G) ----
   function bc5Block(src, off, dst) { bc4Chan(src, off, dst, 0); bc4Chan(src, off+8, dst, 1); }
 
+  // ---- BC4 SNORM block decode (4×4 → grayscale RGBA8, [-1,1] → [0,255]) ----
+  function bc4SBlock(src, off, dst) {
+    var r0u=src[off], r1u=src[off+1];
+    var r0=r0u>127?r0u-256:r0u, r1=r1u>127?r1u-256:r1u;
+    if(r0===-128) r0=-127; if(r1===-128) r1=-127;
+    var f0=r0/127.0, f1=r1/127.0;
+    var bLo=src[off+2]|(src[off+3]<<8)|(src[off+4]<<16)|(src[off+5]<<24), bHi=src[off+6]|(src[off+7]<<8);
+    for(var y=0;y<4;y++) for(var x=0;x<4;x++) {
+      var bp=3*(y*4+x), idx=bp<32?(bLo>>>bp)&7:(bHi>>>(bp-32))&7, p=(y*4+x)*4, v;
+      if(idx===0) v=f0; else if(idx===1) v=f1;
+      else if(r0>r1) v=(f0*(8-idx)+f1*(idx-1))/7;
+      else if(idx===6) v=-1.0; else if(idx===7) v=1.0;
+      else v=(f0*(5-idx)+f1*(idx-1))/5;
+      var vv=(v+1.0)*127.5|0; dst[p]=vv;dst[p+1]=vv;dst[p+2]=vv;dst[p+3]=255;
+    }
+  }
+
+  // BC4 SNORM single-channel variant: writes to dst[p+ch]
+  function bc4SChan(src, off, dst, ch) {
+    var r0u=src[off], r1u=src[off+1];
+    var r0=r0u>127?r0u-256:r0u, r1=r1u>127?r1u-256:r1u;
+    if(r0===-128) r0=-127; if(r1===-128) r1=-127;
+    var f0=r0/127.0, f1=r1/127.0;
+    var bLo=src[off+2]|(src[off+3]<<8)|(src[off+4]<<16)|(src[off+5]<<24), bHi=src[off+6]|(src[off+7]<<8);
+    for(var y=0;y<4;y++) for(var x=0;x<4;x++) {
+      var bp=3*(y*4+x), idx=bp<32?(bLo>>>bp)&7:(bHi>>>(bp-32))&7, p=(y*4+x)*4, v;
+      if(idx===0) v=f0; else if(idx===1) v=f1;
+      else if(r0>r1) v=(f0*(8-idx)+f1*(idx-1))/7;
+      else if(idx===6) v=-1.0; else if(idx===7) v=1.0;
+      else v=(f0*(5-idx)+f1*(idx-1))/5;
+      dst[p+ch]=(v+1.0)*127.5|0;
+    }
+  }
+
+  // ---- BC5 SNORM block decode (two BC4 SNORM blocks: R + G) ----
+  function bc5SBlock(src, off, dst) { bc4SChan(src, off, dst, 0); bc4SChan(src, off+8, dst, 1); }
+
   // ---- Dispatch BC1-BC5 software decode ----
   function decodeBC(data, w, h, fmt, step) {
     step = step || 1;
@@ -269,7 +306,7 @@
     var out = new Uint8ClampedArray(outW * outH * 4);
     var nbw = Math.max(1,(w+3)/4|0), nbh = Math.max(1,(h+3)/4|0);
     var fc = fmt.fourCC, dx = fmt.dxgi;
-    var bs = (fc==='DXT1'||dx===70||dx===71?8:16);
+    var bs = (fc==='DXT1'||dx===70||dx===71||fc==='ATI1'||fc==='BC4U'||fc==='BC4S'||dx===80||dx===81?8:16);
     for (var by=0;by<nbh;by++) {
       // Skip block row if no step-aligned pixel in its Y range
       if (step > 1) {
@@ -288,8 +325,10 @@
         if (fc==='DXT1'||dx===70||dx===71) bc1Block(data, bo, block);
         else if (fc==='DXT5'||dx===77||dx===78) { bc1Block(data, bo+8, block); bc4Chan(data, bo, block, 3); }
         else if (fc==='DXT3'||dx===74||dx===75) { for(var i=0;i<16;i++) block[i*4+3]=((data[bo+(i>>1)]>>((i&1)*4))&15)*17; bc1Block(data, bo+8, block); }
-        else if (fc==='ATI1'||dx===80||dx===81) bc4Block(data, bo, block);
-        else if (fc==='ATI2'||dx===83||dx===84) bc5Block(data, bo, block);
+        else if (fc==='ATI1'||fc==='BC4U'||dx===80) bc4Block(data, bo, block);
+        else if (fc==='BC4S'||dx===81) bc4SBlock(data, bo, block);
+        else if (fc==='ATI2'||fc==='BC5U'||dx===83) bc5Block(data, bo, block);
+        else if (fc==='BC5S'||dx===84) bc5SBlock(data, bo, block);
         if (!(fc==='DXT3'||fc==='DXT5'||dx===74||dx===75||dx===77||dx===78)) { for(var i=3;i<64;i+=4) block[i]=255; }
         for (var py=0;py<4;py++) {
           var gy=by*4+py;
@@ -328,6 +367,9 @@
   S.bc4Block = bc4Block;
   S.bc4Chan = bc4Chan;
   S.bc5Block = bc5Block;
+  S.bc4SBlock = bc4SBlock;
+  S.bc4SChan = bc4SChan;
+  S.bc5SBlock = bc5SBlock;
   S.decodeBC = decodeBC;
 
   self.ImageCodecShared = S;
