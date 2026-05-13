@@ -105,7 +105,7 @@
     var nextWorker = 0;
 
     var myScript = document.querySelector('script[src*="image-viewer.js"]');
-    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=10') : '/js/decode-worker.js?v=10';
+    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=11') : '/js/decode-worker.js?v=11';
 
     for (var i = 0; i < NUM_WORKERS; i++) {
       var w = new Worker(workerUrl);
@@ -548,6 +548,8 @@
       var curMip = 0;
 
       var rowStyle = 'display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:2px 3px;background:rgba(0,0,0,0.45);border-radius:3px;margin:1px 0;width:auto';
+      var dSlider = null, dLabel = null;
+      var isVolume = cachedDdsArr && cachedDdsArr.dds && cachedDdsArr.dds.resDim === 4 && cachedDdsArr.dds.depth > 1;
       if (totalMips > 1) {
         var mipSpacer = document.createElement('div');
         mipSpacer.style.cssText = 'flex-basis:100%;height:0';
@@ -560,7 +562,18 @@
         var mipSlider = document.createElement('input');
         mipSlider.type = 'range'; mipSlider.min = 0; mipSlider.max = totalMips - 1; mipSlider.value = curMip;
         mipSlider.style.cssText = 'width:60px;height:10px;cursor:pointer;accent-color:#4a9eff';
-        mipSlider.addEventListener('input', function(e) { e.stopPropagation(); renderSliceMip(undefined, parseInt(mipSlider.value)); mipLabel.textContent = 'Lv.' + mipSlider.value + ' / ' + (totalMips-1); });
+        mipSlider.addEventListener('input', function(e) {
+          e.stopPropagation();
+          var newMip = parseInt(mipSlider.value);
+          renderSliceMip(undefined, newMip);
+          mipLabel.textContent = 'Lv.' + newMip + ' / ' + (totalMips-1);
+          if (isVolume && dSlider && cachedDdsArr.dds.mipList[newMip]) {
+            var newDepth = cachedDdsArr.dds.mipList[newMip].depth;
+            dSlider.max = newDepth - 1;
+            if (parseInt(dSlider.value) >= newDepth) { dSlider.value = newDepth - 1; renderSliceMip(parseInt(dSlider.value), undefined); }
+            dLabel.textContent = 'D.' + dSlider.value + '/' + dSlider.max;
+          }
+        });
         mipSlider.addEventListener('mousedown', function() {
           meta.style.opacity = '0';
           for (var c = tb.firstChild; c; c = c.nextSibling) { if (c !== mipRow) c.style.opacity = '0'; }
@@ -572,6 +585,36 @@
         mipRow.appendChild(mipLabel);
         mipRow.appendChild(mipSlider);
         tb.appendChild(mipRow);
+      }
+      if (isVolume) {
+        var dSpacer = document.createElement('div');
+        dSpacer.style.cssText = 'flex-basis:100%;height:0';
+        tb.appendChild(dSpacer);
+        var dRow = document.createElement('div');
+        dRow.style.cssText = rowStyle;
+        dLabel = document.createElement('span');
+        dLabel.style.cssText = 'color:#e8eaed;font-size:10px;min-width:32px;text-align:center';
+        var volDepth0 = cachedDdsArr.dds.mipList[0].depth;
+        dLabel.textContent = 'D.0/' + (volDepth0 - 1);
+        dSlider = document.createElement('input');
+        dSlider.type = 'range'; dSlider.min = 0; dSlider.max = volDepth0 - 1; dSlider.value = 0;
+        dSlider.style.cssText = 'width:60px;height:10px;cursor:pointer;accent-color:#f0a030';
+        dSlider.addEventListener('input', function(e) {
+          e.stopPropagation();
+          renderSliceMip(parseInt(dSlider.value), undefined);
+          dLabel.textContent = 'D.' + dSlider.value + '/' + dSlider.max;
+        });
+        dSlider.addEventListener('mousedown', function() {
+          meta.style.opacity = '0';
+          for (var c = tb.firstChild; c; c = c.nextSibling) { if (c !== dRow) c.style.opacity = '0'; }
+        });
+        dSlider.addEventListener('mouseup', function() {
+          meta.style.opacity = '';
+          for (var c = tb.firstChild; c; c = c.nextSibling) { c.style.opacity = ''; }
+        });
+        dRow.appendChild(dLabel);
+        dRow.appendChild(dSlider);
+        tb.appendChild(dRow);
       }
       if (totalArray > 1) {
         var arrSpacer = document.createElement('div');

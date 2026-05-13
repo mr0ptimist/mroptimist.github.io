@@ -16,7 +16,7 @@
 // =============================================================================
 (function(){
   var base = self.location.href.replace(/[^/]+$/, '');
-  importScripts(base + 'worker-shared.js?v=10', base + 'exr-parser.js');
+  importScripts(base + 'worker-shared.js?v=11', base + 'exr-parser.js');
 
   var S = self.ImageCodecShared;
   if (!S) throw new Error('ImageCodecShared not available in worker');

@@ -85,68 +85,75 @@ var DDS = (function(){
     var view = new Uint8Array(buf);
     if (S.str4(view,0) !== 'DDS ') return null;
     var w = S.r32(view,16), h = S.r32(view,12), mips, flags = S.r32(view,8);
-    var ddsDepth2 = Math.max(S.r32(view, 24), 1);
-    var caps2_pre = S.r32(view, 104);
-    // Microsoft DDSTextureLoader: always read dwMipMapCount, ignore flags.
-    // If 0, default to 1. Never calculate from dimensions.
-    // DirectXTex DDS_FLAGS_PERMISSIVE: clamp to max possible mip levels.
+    var ddsDepth = Math.max(S.r32(view, 24), 1);
+    var caps2 = S.r32(view, 112);
     mips = S.r32(view, 28);
     if (mips === 0) mips = 1;
-    var maxPossibleMips = Math.floor(Math.log2(Math.max(w, h))) + 1;
-    if (mips > maxPossibleMips) mips = maxPossibleMips;
     var fmt = S.detectFmt(view);
     var dataOff = fmt.fourCC === 'DX10' ? 148 : 128;
 
-    var dx10Misc = 0, dx10Array = 1;
+    var dx10Misc = 0, dx10Array = 1, resDim = 3;
     if (fmt.fourCC === 'DX10') {
+      resDim = S.r32(view, 132);
       dx10Misc = S.r32(view, 136);
       dx10Array = Math.max(S.r32(view, 140), 1);
+    } else {
+      if (flags & 0x800000 || caps2 & 0x200000) resDim = 4;
     }
-    var caps2 = caps2_pre;
-    var ddsDepth = ddsDepth2;
+    var depth = (resDim === 4) ? ddsDepth : 1;
+    var maxPossibleMips = Math.floor(Math.log2(Math.max(w, h, depth))) + 1;
+    if (mips > maxPossibleMips) mips = maxPossibleMips;
 
     var mipOff = dataOff, mipList = [];
     for (var i = 0; i < mips; i++) {
       var mw = Math.max(1, w>>i), mh = Math.max(1, h>>i);
-      var size;
+      var mipDepth = (resDim === 4) ? Math.max(1, depth >> i) : 1;
+      var sliceSize;
       if (fmt.isComp) {
         var bs = (fmt.family==='BC1'||fmt.family==='BC4') ? 8 : 16;
-        size = Math.max(1,(mw+3)/4|0) * Math.max(1,(mh+3)/4|0) * bs;
+        sliceSize = Math.max(1,(mw+3)/4|0) * Math.max(1,(mh+3)/4|0) * bs;
       } else {
-        size = mw * mh * (fmt.bpp / 8);
+        sliceSize = mw * mh * (fmt.bpp / 8);
       }
+      var size = sliceSize * mipDepth;
       if (mipOff + size > buf.byteLength) {
         if (i === 0) size = buf.byteLength - mipOff;
         else break;
       }
       if (size <= 0) break;
-      mipList.push({off:mipOff, size:size, w:mw, h:mh});
+      mipList.push({off:mipOff, size:size, w:mw, h:mh, depth:mipDepth, sliceSize:sliceSize});
       mipOff += size;
     }
     mips = mipList.length;
     var faceByteSize = mipOff - dataOff;
     var arraySize = 1;
-    // Microsoft DirectXTex: DX10 cubemap arraySize = number of cubes, total faces = arraySize * 6
-    if (dx10Misc & 0x4) arraySize = dx10Array * 6;
-    else if (dx10Array > 1) arraySize = dx10Array;
-    else if (caps2 & 0x200) {
+    if (resDim === 4) {
+      arraySize = 1;
+    } else if (dx10Misc & 0x4) {
+      arraySize = dx10Array * 6;
+    } else if (fmt.fourCC === 'DX10') {
+      arraySize = dx10Array;
+    } else if (caps2 & 0x200) {
       arraySize = 0;
       for (var bit = 0; bit < 6; bit++) { if (caps2 & (0x400 << bit)) arraySize++; }
       if (!arraySize) arraySize = 6;
     }
-    else if ((caps2 & 0x200000) || ddsDepth > 1) arraySize = ddsDepth;
-    var totalFaces = Math.floor((buf.byteLength - dataOff) / faceByteSize);
-    if (totalFaces > arraySize) arraySize = totalFaces;
 
     function getMip(n, slice) {
       if (n < 0 || n >= mips) return null;
       slice = slice || 0;
-      if (slice < 0 || slice >= arraySize) return null;
       var m = mipList[n];
-      var off = m.off + slice * faceByteSize;
-      if (off + m.size > view.byteLength) return null;
+      var off;
+      if (resDim === 4) {
+        if (slice < 0 || slice >= m.depth) return null;
+        off = m.off + slice * m.sliceSize;
+      } else {
+        if (slice < 0 || slice >= arraySize) return null;
+        off = m.off + slice * faceByteSize;
+      }
+      if (off + m.sliceSize > view.byteLength) return null;
       var px = new Uint8ClampedArray(m.w * m.h * 4);
-      var data = new Uint8Array(buf, off, m.size);
+      var data = new Uint8Array(buf, off, m.sliceSize);
       var fam = fmt.family;
 
       if (fmt.isComp) {
@@ -331,6 +338,7 @@ var DDS = (function(){
     return {
       w:w, h:h, mips:mips, fmt:fmt, raw: new Uint8Array(buf), mipList:mipList,
       arraySize: arraySize, faceByteSize: faceByteSize,
+      resDim: resDim, depth: depth,
       getMip: getMip
     };
   }
