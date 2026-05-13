@@ -1,3 +1,9 @@
 [submodule "themes/PaperMod"]
 	path = themes/PaperMod
 	url = https://github.com/adityatelange/hugo-PaperMod.git
+[submodule "reference/DirectXTK12"]
+	path = reference/DirectXTK12
+	url = https://github.com/microsoft/DirectXTK12.git
+[submodule "reference/DirectXTex"]
+	path = reference/DirectXTex
+	url = https://github.com/microsoft/DirectXTex.git

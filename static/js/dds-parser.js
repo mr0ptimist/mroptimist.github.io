@@ -87,13 +87,13 @@ var DDS = (function(){
     var w = S.r32(view,16), h = S.r32(view,12), mips, flags = S.r32(view,8);
     var ddsDepth2 = Math.max(S.r32(view, 24), 1);
     var caps2_pre = S.r32(view, 104);
-    if (flags & 0x20000) {
-      mips = Math.max(S.r32(view,28), 1);
-    } else if (ddsDepth2 > 1 || (caps2_pre & (0x200|0x200000))) {
-      mips = 1;
-    } else {
-      mips = Math.floor(Math.log2(Math.max(w, h))) + 1;
-    }
+    // Microsoft DDSTextureLoader: always read dwMipMapCount, ignore flags.
+    // If 0, default to 1. Never calculate from dimensions.
+    // DirectXTex DDS_FLAGS_PERMISSIVE: clamp to max possible mip levels.
+    mips = S.r32(view, 28);
+    if (mips === 0) mips = 1;
+    var maxPossibleMips = Math.floor(Math.log2(Math.max(w, h))) + 1;
+    if (mips > maxPossibleMips) mips = maxPossibleMips;
     var fmt = S.detectFmt(view);
     var dataOff = fmt.fourCC === 'DX10' ? 148 : 128;
 
@@ -126,7 +126,8 @@ var DDS = (function(){
     mips = mipList.length;
     var faceByteSize = mipOff - dataOff;
     var arraySize = 1;
-    if (dx10Misc & 0x4) arraySize = 6;
+    // Microsoft DirectXTex: DX10 cubemap arraySize = number of cubes, total faces = arraySize * 6
+    if (dx10Misc & 0x4) arraySize = dx10Array * 6;
     else if (dx10Array > 1) arraySize = dx10Array;
     else if (caps2 & 0x200) {
       arraySize = 0;
