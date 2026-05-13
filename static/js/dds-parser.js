@@ -84,6 +84,8 @@ var DDS = (function(){
   function parse(buf) {
     var view = new Uint8Array(buf);
     if (S.str4(view,0) !== 'DDS ') return null;
+    if (S.r32(view, 4) !== 124) return null;
+    if (S.r32(view, 76) !== 32) return null;
     var w = S.r32(view,16), h = S.r32(view,12), mips, flags = S.r32(view,8);
     var ddsDepth = Math.max(S.r32(view, 24), 1);
     var caps2 = S.r32(view, 112);
@@ -92,11 +94,12 @@ var DDS = (function(){
     var fmt = S.detectFmt(view);
     var dataOff = fmt.fourCC === 'DX10' ? 148 : 128;
 
-    var dx10Misc = 0, dx10Array = 1, resDim = 3;
+    var dx10Misc = 0, dx10Array = 1, resDim = 3, alphaMode = 0;
     if (fmt.fourCC === 'DX10') {
       resDim = S.r32(view, 132);
       dx10Misc = S.r32(view, 136);
       dx10Array = Math.max(S.r32(view, 140), 1);
+      alphaMode = S.r32(view, 144) & 0x7;
     } else {
       if (flags & 0x800000 || caps2 & 0x200000) resDim = 4;
     }
@@ -338,7 +341,7 @@ var DDS = (function(){
     return {
       w:w, h:h, mips:mips, fmt:fmt, raw: new Uint8Array(buf), mipList:mipList,
       arraySize: arraySize, faceByteSize: faceByteSize,
-      resDim: resDim, depth: depth,
+      resDim: resDim, depth: depth, alphaMode: alphaMode,
       getMip: getMip
     };
   }

@@ -506,6 +506,8 @@
         });
       }
       if (rd.array_size !== undefined) lines.push('array_size: ' + rd.array_size);
+      var alphaNames = ['unknown','straight','premultiplied','opaque','custom'];
+      if (cachedDds && cachedDds.dds && cachedDds.dds.alphaMode) lines.push('alpha: ' + (alphaNames[cachedDds.dds.alphaMode] || cachedDds.dds.alphaMode));
       var cachedM = ddsCache.get(img.src);
       var ddsMips = cachedM && cachedM.dds ? cachedM.dds.mips : 1;
       var totalMips = parseInt(rd.mips) || ddsMips;
