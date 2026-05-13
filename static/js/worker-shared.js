@@ -134,9 +134,15 @@
     if (type.startsWith('R10G10B10A2')) return 'R10G10B10A2';
     if (type.startsWith('R11G11B10')) return 'R11G11B10';
     if (type.startsWith('R16G16B16A16')&&type.indexOf('FLOAT')>=0) return 'RGBA64F';
+    if (type.startsWith('R16G16B16A16')&&type.indexOf('SNORM')>=0) return 'RGBA16S';
     if (type.startsWith('R16G16B16A16')) return 'RGBA16';
+    if (type.startsWith('R32G32B32A32')) return 'RGBA128F';
+    if (type.startsWith('R32G32B32')) return 'RGB96F';
+    if (type.startsWith('R32G32')&&type.indexOf('FLOAT')>=0) return 'R32G32F';
     if (type.startsWith('R16G16')&&type.indexOf('FLOAT')>=0) return 'R16G16F';
     if (type.startsWith('R16G16')) return 'R16G16';
+    if (type.startsWith('R8G8_B8G8')) return 'RGBG';
+    if (type.startsWith('G8R8_G8B8')) return 'GRGB';
     if (type.startsWith('R8G8')) return type.indexOf('SNORM')>=0 ? 'R8G8S' : 'R8G8';
     if (type.startsWith('B8G8R8')) return 'BGRA8';
     if (type.startsWith('R16_FLOAT')) return 'R16F';
@@ -145,14 +151,13 @@
     if (type.startsWith('R32_FLOAT')||type==='D32_FLOAT') return 'R32F';
     if (type.startsWith('D32_FLOAT_S8')) return 'D32S8';
     if (type.startsWith('R9G9B9E5')) return 'RGB9E5';
-    if (type.startsWith('R32G32B32A32')) return 'RGBA128F';
-    if (type.startsWith('R32G32B32')) return 'RGB96F';
     return type;
   }
 
   // ---- DDS format detector (from FourCC / pixel-format masks) ----
   function detectFmt(view) {
     var fourCC = str4(view,84);
+    var fourCCraw = r32(view,84);
     if (fourCC === 'DX10') {
       var dxgi = r32(view,128);
       var t = DXGI_MAP[dxgi]||('DXGI_'+dxgi);
@@ -160,10 +165,33 @@
       return { fourCC:fourCC, dxgi:dxgi, type:t, family:fam, isComp: fam.startsWith('BC'), bpp:DXGI_BPP[dxgi]||0 };
     }
     if (fourCC === 'DXT1') { var lt='BC1_UNORM'; return { fourCC:fourCC, dxgi:71, type:lt, family:fmtFamily(lt), isComp:true, bpp:8 }; }
+    if (fourCC === 'DXT2') { var lt='BC2_UNORM'; return { fourCC:fourCC, dxgi:74, type:lt, family:fmtFamily(lt), isComp:true, bpp:16, pmAlpha:true }; }
     if (fourCC === 'DXT3') { var lt='BC2_UNORM'; return { fourCC:fourCC, dxgi:74, type:lt, family:fmtFamily(lt), isComp:true, bpp:16 }; }
+    if (fourCC === 'DXT4') { var lt='BC3_UNORM'; return { fourCC:fourCC, dxgi:77, type:lt, family:fmtFamily(lt), isComp:true, bpp:16, pmAlpha:true }; }
     if (fourCC === 'DXT5') { var lt='BC3_UNORM'; return { fourCC:fourCC, dxgi:77, type:lt, family:fmtFamily(lt), isComp:true, bpp:16 }; }
     if (fourCC === 'ATI1')  { var lt='BC4_UNORM'; return { fourCC:fourCC, dxgi:80, type:lt, family:fmtFamily(lt), isComp:true, bpp:8 }; }
+    if (fourCC === 'BC4U')  { var lt='BC4_UNORM'; return { fourCC:fourCC, dxgi:80, type:lt, family:fmtFamily(lt), isComp:true, bpp:8 }; }
+    if (fourCC === 'BC4S')  { var lt='BC4_SNORM'; return { fourCC:fourCC, dxgi:81, type:lt, family:fmtFamily(lt), isComp:true, bpp:8 }; }
     if (fourCC === 'ATI2')  { var lt='BC5_UNORM'; return { fourCC:fourCC, dxgi:83, type:lt, family:fmtFamily(lt), isComp:true, bpp:16 }; }
+    if (fourCC === 'BC5U')  { var lt='BC5_UNORM'; return { fourCC:fourCC, dxgi:83, type:lt, family:fmtFamily(lt), isComp:true, bpp:16 }; }
+    if (fourCC === 'BC5S')  { var lt='BC5_SNORM'; return { fourCC:fourCC, dxgi:84, type:lt, family:fmtFamily(lt), isComp:true, bpp:16 }; }
+    if (fourCC === 'BC6H')  { var lt='BC6H_UF16'; return { fourCC:fourCC, dxgi:95, type:lt, family:fmtFamily(lt), isComp:true, bpp:16 }; }
+    // BC7L and BC7\0 (null terminated) — check raw fourCC value for 'BC7\0'
+    if (fourCC === 'BC7L' || fourCCraw === 0x374342 /* 'BC7\0' */) { var lt='BC7_UNORM'; return { fourCC:fourCC, dxgi:98, type:lt, family:fmtFamily(lt), isComp:true, bpp:16 }; }
+    if (fourCC === 'RGBG')  { var lt='R8G8_B8G8_UNORM'; return { fourCC:fourCC, dxgi:68, type:lt, family:fmtFamily(lt), isComp:false, bpp:16 }; }
+    if (fourCC === 'GRGB')  { var lt='G8R8_G8B8_UNORM'; return { fourCC:fourCC, dxgi:69, type:lt, family:fmtFamily(lt), isComp:false, bpp:16 }; }
+    if (fourCC === 'A2XY')  { var lt='BC5_UNORM'; return { fourCC:fourCC, dxgi:83, type:lt, family:fmtFamily(lt), isComp:true, bpp:16 }; }
+    // Numeric FourCC (D3D9 legacy float/integer formats)
+    switch (fourCCraw) {
+      case 36:  return { fourCC:fourCC, dxgi:11, type:'R16G16B16A16_UNORM', family:'RGBA16', isComp:false, bpp:64 };
+      case 110: return { fourCC:fourCC, dxgi:13, type:'R16G16B16A16_SNORM', family:'RGBA16S', isComp:false, bpp:64 };
+      case 111: return { fourCC:fourCC, dxgi:54, type:'R16_FLOAT', family:'R16F', isComp:false, bpp:16 };
+      case 112: return { fourCC:fourCC, dxgi:34, type:'R16G16_FLOAT', family:'R16G16F', isComp:false, bpp:32 };
+      case 113: return { fourCC:fourCC, dxgi:10, type:'R16G16B16A16_FLOAT', family:'RGBA64F', isComp:false, bpp:64 };
+      case 114: return { fourCC:fourCC, dxgi:41, type:'R32_FLOAT', family:'R32F', isComp:false, bpp:32 };
+      case 115: return { fourCC:fourCC, dxgi:16, type:'R32G32_FLOAT', family:'R32G32F', isComp:false, bpp:64 };
+      case 116: return { fourCC:fourCC, dxgi:2,  type:'R32G32B32A32_FLOAT', family:'RGBA128F', isComp:false, bpp:128 };
+    }
     var bc = r32(view,88), rmask = r32(view,92), gmask = r32(view,96), bmask = r32(view,100), amask = r32(view,104);
     if (bc===32 && rmask===0xFF && gmask===0xFF00 && bmask===0xFF0000 && amask===0xFF000000)
       return { fourCC:fourCC, dxgi:28, type:'R8G8B8A8_UNORM', family:'RGBA8', isComp:false, bpp:32 };

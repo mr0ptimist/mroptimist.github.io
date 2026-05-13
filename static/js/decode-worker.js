@@ -52,6 +52,20 @@
     var px = new Uint8ClampedArray(outW * outH * 4);
 
     if (step === 1) {
+    if (fam==='RGBG') {
+      for (var j=0;j<w*h;j+=2) {
+        var si=j*2, r0=data[si], g0=data[si+1], b1=data[si+2], g1=data[si+3];
+        px[j*4]=r0; px[j*4+1]=g0; px[j*4+2]=b1; px[j*4+3]=255;
+        if (j+1<w*h) { px[(j+1)*4]=r0; px[(j+1)*4+1]=g1; px[(j+1)*4+2]=b1; px[(j+1)*4+3]=255; }
+      } return px;
+    }
+    if (fam==='GRGB') {
+      for (var j=0;j<w*h;j+=2) {
+        var si=j*2, g0=data[si], r0=data[si+1], g1=data[si+2], b1=data[si+3];
+        px[j*4]=r0; px[j*4+1]=g0; px[j*4+2]=b1; px[j*4+3]=255;
+        if (j+1<w*h) { px[(j+1)*4]=r0; px[(j+1)*4+1]=g1; px[(j+1)*4+2]=b1; px[(j+1)*4+3]=255; }
+      } return px;
+    }
     if (fam==='RGBA8') { for (var j=0;j<px.length;j++) px[j]=data[j]; return px; }
     if (fam==='BGRA8') {
       var sw = dds.fmt.swizzle || 'bgra';

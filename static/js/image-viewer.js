@@ -147,11 +147,11 @@
 
   // Channel map from DXGI format code
   var DXGI_CHANNELS = {
-    2:'RGBA', 6:'RGB', 10:'RGBA', 11:'RGBA',
+    2:'RGBA', 6:'RGB', 10:'RGBA', 11:'RGBA', 13:'RGBA', 16:'RG',
     20:'R', 24:'RGBA', 26:'RGB', 27:'RGBA', 28:'RGBA', 29:'RGBA', 87:'RGBA',
     34:'RG', 35:'RG', 36:'RG',
     40:'R', 41:'R',
-    49:'RG',
+    49:'RG', 68:'RGB', 69:'RGB',
     53:'R', 54:'R', 55:'R', 56:'R', 57:'R',
     61:'R', 65:'R', 67:'RGB',
     70:'RGB', 71:'RGB', 72:'RGB',
@@ -341,8 +341,8 @@
     var ddsInfo = ddsCache.get(img.src);
     var fam = ddsInfo && ddsInfo.dds ? ddsInfo.dds.fmt.family : '';
     var rangeText = '';
-    if (fam==='R8S'||fam==='R8G8S'||fam.indexOf('SNORM')>=0) rangeText = '[-1, 1]';
-    else if (fam==='R16F'||fam==='R32F'||fam==='R11G11B10'||fam==='RGBA64F'||fam==='RGBA128F'||fam==='RGB96F'||fam==='BC6H'||fam==='R16G16F') rangeText = '[0, \u221E)';
+    if (fam==='R8S'||fam==='R8G8S'||fam==='RGBA16S'||fam.indexOf('SNORM')>=0) rangeText = '[-1, 1]';
+    else if (fam==='R16F'||fam==='R32F'||fam==='R11G11B10'||fam==='RGBA64F'||fam==='RGBA128F'||fam==='RGB96F'||fam==='BC6H'||fam==='R16G16F'||fam==='R32G32F'||fam==='RGB9E5') rangeText = '[0, \u221E)';
     else if (fam==='R8_UINT'||fam.indexOf('UINT')>=0) rangeText = '[0, 255]';
     else if (fam.indexOf('BC')===0||fam.indexOf('R8')===0||fam.indexOf('R16')===0||fam.indexOf('RGBA')===0||fam.indexOf('BGRA')===0||fam==='R10G10B10A2'||fam==='D32S8') rangeText = '[0, 1]';
     else if (fam) rangeText = '[0, 1]';
@@ -379,7 +379,7 @@
         var exrC = exrCache.get(_img.src);
         if (ddsC && ddsC.dds) {
           var fam = ddsC.dds.fmt.family;
-          isFloat = fam==='R16F'||fam==='R32F'||fam==='BC6H'||fam==='R11G11B10'||fam==='R16G16F'||fam==='RGB9E5'||fam==='RGBA128F'||fam==='RGB96F'||fam==='RGBA64F';
+          isFloat = fam==='R16F'||fam==='R32F'||fam==='BC6H'||fam==='R11G11B10'||fam==='R16G16F'||fam==='RGB9E5'||fam==='RGBA128F'||fam==='RGB96F'||fam==='RGBA64F'||fam==='R32G32F';
         } else if (exrC) {
           isFloat = true;
         }
