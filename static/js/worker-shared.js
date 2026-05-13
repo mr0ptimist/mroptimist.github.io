@@ -150,6 +150,7 @@
     if (type.startsWith('R8_')||type==='A8_UNORM') return type.indexOf('SNORM')>=0 ? 'R8S' : 'R8';
     if (type.startsWith('R32_FLOAT')||type==='D32_FLOAT') return 'R32F';
     if (type.startsWith('D32_FLOAT_S8')) return 'D32S8';
+    if (type.startsWith('D24_')) return 'D24S8';
     if (type.startsWith('R9G9B9E5')) return 'RGB9E5';
     return type;
   }

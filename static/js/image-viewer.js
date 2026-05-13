@@ -105,7 +105,7 @@
     var nextWorker = 0;
 
     var myScript = document.querySelector('script[src*="image-viewer.js"]');
-    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=12') : '/js/decode-worker.js?v=12';
+    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=13') : '/js/decode-worker.js?v=13';
 
     for (var i = 0; i < NUM_WORKERS; i++) {
       var w = new Worker(workerUrl);
@@ -148,7 +148,7 @@
   // Channel map from DXGI format code
   var DXGI_CHANNELS = {
     2:'RGBA', 6:'RGB', 10:'RGBA', 11:'RGBA', 13:'RGBA', 16:'RG',
-    20:'R', 24:'RGBA', 26:'RGB', 27:'RGBA', 28:'RGBA', 29:'RGBA', 87:'RGBA',
+    20:'R', 24:'RGBA', 26:'RGB', 27:'RGBA', 28:'RGBA', 29:'RGBA', 45:'R', 87:'RGBA',
     34:'RG', 35:'RG', 36:'RG',
     40:'R', 41:'R',
     49:'RG', 68:'RGB', 69:'RGB',
