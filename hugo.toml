@@ -30,6 +30,15 @@ buildFuture = true
     favicon32x32 = '/favicon-32x32.png'
     apple_touch_icon = '/apple-touch-icon.png'
 
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.extensions]
+      [markup.goldmark.extensions.passthrough]
+        enable = true
+    [markup.goldmark.extensions.passthrough.delimiters]
+      block = [['$$', '$$']]
+      inline = [['$', '$']]
+
 [menus]
   [[menus.main]]
     identifier = 'home'
