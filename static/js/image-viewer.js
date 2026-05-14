@@ -448,19 +448,7 @@
     var ddsInfo = ddsCache.get(img.src);
     var fam = ddsInfo && ddsInfo.dds ? ddsInfo.dds.fmt.family : '';
     var ddsType = ddsInfo && ddsInfo.dds ? ddsInfo.dds.fmt.type : '';
-    var rangeText = '';
-    if (fam==='R8S'||fam==='R8G8S'||fam==='RGBA16S'||ddsType.indexOf('SNORM')>=0) rangeText = '[-1, 1]';
-    else if (fam==='R16F'||fam==='R32F'||fam==='R11G11B10'||fam==='RGBA64F'||fam==='RGBA128F'||fam==='RGB96F'||fam==='BC6H'||fam==='R16G16F'||fam==='R32G32F'||fam==='RGB9E5') rangeText = '[0, \u221E)';
-    else if (fam==='R8_UINT'||fam.indexOf('UINT')>=0) rangeText = '[0, 255]';
-    else if (fam.indexOf('BC')===0||fam.indexOf('R8')===0||fam.indexOf('R16')===0||fam.indexOf('RGBA')===0||fam.indexOf('BGRA')===0||fam==='R10G10B10A2'||fam==='D32S8') rangeText = '[0, 1]';
-    else if (fam) rangeText = '[0, 1]';
-    if (rangeText) {
-      var rangeBadge = document.createElement('div');
-      rangeBadge.className = 'channel-range-badge';
-      rangeBadge.textContent = rangeText;
-      wrapper.appendChild(rangeBadge);
-    }
-
+    
     // Pixel inspector
     var pxPinnedList = [];
     var pxFloat = document.createElement('div');
