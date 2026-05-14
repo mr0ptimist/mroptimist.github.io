@@ -105,7 +105,7 @@
     var nextWorker = 0;
 
     var myScript = document.querySelector('script[src*="image-viewer.js"]');
-    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=14') : '/js/decode-worker.js?v=14';
+    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=17') : '/js/decode-worker.js?v=17';
 
     for (var i = 0; i < NUM_WORKERS; i++) {
       var w = new Worker(workerUrl);
@@ -214,6 +214,25 @@
     var tb = document.createElement('div');
     tb.className = 'channel-toolbar';
 
+    function sizeCanvas(cv, cw, ch) {
+      var maxD = Math.max(cw, ch);
+      var dw = cw, dh = ch;
+      var tin = Math.min(cw, ch) <= 4;
+      if (inTable) {
+        cv.style.width = '100%';
+        cv.style.height = is1D ? '30px' : 'auto';
+      } else {
+        if (maxD > 1000) { var ds = 1000 / maxD; dw = Math.round(cw * ds); dh = Math.round(ch * ds); }
+        else if (maxD < 540) { var us = 540 / maxD; dw = Math.round(cw * us); dh = Math.round(ch * us); }
+        if (Math.min(dw, dh) > 500) { var s2 = 500 / Math.min(dw, dh); dw = Math.round(dw * s2); dh = Math.round(dh * s2); }
+        if (tin) { if (dw < 20) dw = 20; if (dh < 20) dh = 20; }
+        if (is1D) dh = 30;
+        cv.style.width = dw + 'px';
+        cv.style.height = dh + 'px';
+      }
+      return {dw: dw, dh: dh};
+    }
+
     var channels = ['RGB','R','G','B','A','RGBA'];
     channels.forEach(function(ch) {
       var b = document.createElement('button');
@@ -249,8 +268,7 @@
         var cv = wrapper.querySelector('canvas');
         if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; if (samplingNearest) cv.classList.add('sampling-nearest'); wrapper.appendChild(cv); }
         cv.width = curW; cv.height = curH;
-        if (inTable) { cv.style.width = '100%'; cv.style.height = is1D ? '30px' : 'auto'; }
-        else if (displayW !== w) { cv.style.width = displayW + 'px'; }
+        sizeCanvas(cv, curW, curH);
         cv.getContext('2d').putImageData(new ImageData(px, curW, curH), 0, 0);
       });
       tb.appendChild(b);
@@ -291,17 +309,12 @@
     // DDS/EXR: create canvas immediately
     var is1D = h === 1 && ddsPixels && ddsCache.get(img.src) && ddsCache.get(img.src).dds && ddsCache.get(img.src).dds.resDim === 2;
     if (is1D) displayH = 30;
+    var initialSize = null;
     if (ddsPixels) {
       var cv = document.createElement('canvas');
       cv.className = 'channel-canvas'; cv.width = w; cv.height = h;
       cv.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(straight), w, h), 0, 0);
-      if (inTable) {
-        cv.style.width = '100%';
-        cv.style.height = is1D ? '30px' : 'auto';
-      } else if (displayW !== w || displayH !== h) {
-        cv.style.width = displayW + 'px';
-        if (tinyDim || is1D) cv.style.height = displayH + 'px';
-      }
+      initialSize = sizeCanvas(cv, w, h);
       var parent = img.parentNode;
       if (parent.tagName === 'P') {
         parent.parentNode.insertBefore(wrapper, parent);
@@ -328,7 +341,11 @@
     // Display size badge (bottom-right corner)
     var sizeBadge = document.createElement('div');
     sizeBadge.className = 'channel-size-badge';
-    sizeBadge.textContent = displayW + '\u00d7' + displayH + (displayW !== w || displayH !== h ? '  (' + w + '\u00d7' + h + ')' : '');
+    if (initialSize) {
+      sizeBadge.textContent = initialSize.dw + '\u00d7' + initialSize.dh + (initialSize.dw !== w || initialSize.dh !== h ? '  (' + w + '\u00d7' + h + ')' : '');
+    } else {
+      sizeBadge.textContent = displayW + '\u00d7' + displayH + (displayW !== w || displayH !== h ? '  (' + w + '\u00d7' + h + ')' : '');
+    }
     wrapper.appendChild(sizeBadge);
 
     // Timing badge (bottom-left corner)
@@ -520,8 +537,6 @@
       var cachedM = ddsCache.get(img.src);
       var ddsMips = cachedM && cachedM.dds ? cachedM.dds.mips : 1;
       var totalMips = parseInt(rd.mips) || ddsMips;
-      var maxMip = Math.max(0, totalMips - 1);
-      lines.push('mip: 0');
       if (ai.content || ai.pipeline_stage) {
         if (ai.pipeline_stage) lines.push('[AI] stage: ' + ai.pipeline_stage);
         if (ai.content) lines.push('[AI] ' + ai.content);
@@ -532,7 +547,7 @@
       inner.textContent = lines.join('\n');
       var cachedDdsArr = ddsCache.get(img.src);
       var totalArray = cachedDdsArr && cachedDdsArr.dds ? cachedDdsArr.dds.arraySize : 1;
-      if (totalArray <= 1) totalArray = parseInt(rd.array_size) || 0;
+      if (totalArray <= 1) totalArray = parseInt(rd.array_size) || 1;
       var curSlice = 0;
 
       var renderSliceMip = function(s, n) {
@@ -540,15 +555,20 @@
         if (n !== undefined) curMip = n;
         var cached = ddsCache.get(img.src);
         if (cached && cached.dds) {
-          var px = cached.dds.getMip(curMip, curSlice); if (!px) return;
+          var px = cached.dds.getMip(curMip, curSlice);
+          if (!px) {
+            cv = wrapper.querySelector('canvas');
+            if (cv) { cv.width = 1; cv.height = 1; var ectx = cv.getContext('2d'); ectx.fillStyle = '#ff00ff'; ectx.fillRect(0,0,1,1); }
+            return;
+          }
           var mw = Math.max(1, cached.dds.w >> curMip);
           var mh = Math.max(1, cached.dds.h >> curMip);
           var cv = wrapper.querySelector('canvas');
           if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; if (samplingNearest) cv.classList.add('sampling-nearest'); wrapper.appendChild(cv); }
           cv.width = mw; cv.height = mh;
           cv.getContext('2d').putImageData(new ImageData(px, mw, mh), 0, 0);
-          cv.style.width = inTable ? '100%' : displayW + 'px';
-          cv.style.height = inTable ? (is1D ? '30px' : 'auto') : (tinyDim || is1D ? displayH + 'px' : 'auto');
+          var sz = sizeCanvas(cv, mw, mh);
+          if (sizeBadge) sizeBadge.textContent = sz.dw + '×' + sz.dh + (sz.dw !== mw || sz.dh !== mh ? '  (' + mw + '×' + mh + ')' : '');
           straight = px;
           pxCache.set(img.src, px);
           curW = mw; curH = mh;

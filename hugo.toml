@@ -32,6 +32,11 @@ buildFuture = true
 
 [markup]
   [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+    [markup.goldmark.toc]
+      startLevel = 2
+      endLevel = 5
     [markup.goldmark.extensions]
       [markup.goldmark.extensions.passthrough]
         enable = true

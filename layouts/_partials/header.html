@@ -130,6 +130,15 @@
             </li>
             {{- end }}
         </ul>
+        {{- if and (eq .Kind "page") (ne .Type "stats") }}
+        <span class="nav-stats" id="nav-stats">
+            {{- $wc := .WordCount }}
+            {{- $imgs := findRE `(!\[[^\]]*\]\([^)]+\)|<img\b)` .RawContent }}
+            {{- $imgCount := len $imgs }}
+            {{- if ge $wc 1000 }}{{ printf "%.1fk字" (div (float $wc) 1000) }}{{ else }}{{ printf "%d字" $wc }}{{ end }}
+            {{- if gt $imgCount 0 }}&nbsp;{{ printf "%d图" $imgCount }}{{ end }}
+        </span>
+        {{- end }}
     </nav>
 </header>
 

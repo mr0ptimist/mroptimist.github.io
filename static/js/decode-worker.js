@@ -16,7 +16,7 @@
 // =============================================================================
 (function(){
   var base = self.location.href.replace(/[^/]+$/, '');
-  importScripts(base + 'worker-shared.js?v=14', base + 'exr-parser.js');
+  importScripts(base + 'worker-shared.js?v=17', base + 'exr-parser.js');
 
   var S = self.ImageCodecShared;
   if (!S) throw new Error('ImageCodecShared not available in worker');
@@ -564,7 +564,7 @@
       if (dds) {
         if (msg.typeOverride) dds.fmt.type = msg.typeOverride;
         var step = 1;
-        if (msg.targetDim && !/UINT|INT|SINT/i.test(dds.fmt.type)) {
+        if (msg.targetDim) {
           var maxDim = Math.max(dds.w, dds.h);
           if (maxDim > 1024) step = Math.ceil(maxDim / msg.targetDim);
         }

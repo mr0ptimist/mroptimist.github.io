@@ -62,24 +62,6 @@
   var links = toc.querySelectorAll('a');
   if (!links.length) return;
 
-  // Hide TOC items: keep h1 always, hide sub-headings without number prefix
-  links.forEach(function(link) {
-    var text = link.textContent.trim();
-    // Count nesting depth: how many parent <ul> elements
-    var depth = 0;
-    var parent = link.parentElement;
-    while (parent && parent !== toc) {
-      if (parent.tagName === 'UL') depth++;
-      parent = parent.parentElement;
-    }
-    // depth 1 = h1, depth 2 = h2, always show
-    // depth 3+ = h3/h4/..., only show if starts with number
-    if (depth > 2 && !/^[\d一二三四五六七八九十]/.test(text)) {
-      var li = link.closest('li');
-      if (li) li.style.display = 'none';
-    }
-  });
-
   // Clean up empty nested ul
   toc.querySelectorAll('ul').forEach(function(ul) {
     var visible = ul.querySelectorAll(':scope > li:not([style*="display: none"])');

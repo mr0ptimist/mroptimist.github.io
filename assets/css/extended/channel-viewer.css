@@ -8,7 +8,10 @@
   overflow: hidden;
 }
 
-.channel-container canvas,
+.channel-container canvas {
+  display: block;
+  max-width: 100%;
+}
 .channel-container img {
   display: block;
   max-width: 100%;

@@ -1,0 +1,9 @@
+.nav-stats {
+    font-size: 12px;
+    color: var(--secondary);
+    white-space: nowrap;
+    margin-left: auto;
+    padding: 0 8px;
+    opacity: 0.7;
+    align-self: center;
+}
