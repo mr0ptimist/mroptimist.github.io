@@ -354,15 +354,19 @@
 
       loSlider.addEventListener('mousedown', function() {
         for (var c = tb.firstChild; c; c = c.nextSibling) { if (c !== rangeRow) c.style.opacity = '0'; }
+        var m = wrapper.querySelector('.channel-meta'); if (m) m.style.opacity = '0';
       });
       loSlider.addEventListener('mouseup', function() {
         for (var c = tb.firstChild; c; c = c.nextSibling) { c.style.opacity = ''; }
+        var m = wrapper.querySelector('.channel-meta'); if (m) m.style.opacity = '';
       });
       hiSlider.addEventListener('mousedown', function() {
         for (var c = tb.firstChild; c; c = c.nextSibling) { if (c !== rangeRow) c.style.opacity = '0'; }
+        var m = wrapper.querySelector('.channel-meta'); if (m) m.style.opacity = '0';
       });
       hiSlider.addEventListener('mouseup', function() {
         for (var c = tb.firstChild; c; c = c.nextSibling) { c.style.opacity = ''; }
+        var m = wrapper.querySelector('.channel-meta'); if (m) m.style.opacity = '';
       });
 
       var resetBtn = document.createElement('button');
