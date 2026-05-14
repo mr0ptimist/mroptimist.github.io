@@ -352,6 +352,19 @@
         renderRemapped();
       });
 
+      loSlider.addEventListener('mousedown', function() {
+        for (var c = tb.firstChild; c; c = c.nextSibling) { if (c !== rangeRow) c.style.opacity = '0'; }
+      });
+      loSlider.addEventListener('mouseup', function() {
+        for (var c = tb.firstChild; c; c = c.nextSibling) { c.style.opacity = ''; }
+      });
+      hiSlider.addEventListener('mousedown', function() {
+        for (var c = tb.firstChild; c; c = c.nextSibling) { if (c !== rangeRow) c.style.opacity = '0'; }
+      });
+      hiSlider.addEventListener('mouseup', function() {
+        for (var c = tb.firstChild; c; c = c.nextSibling) { c.style.opacity = ''; }
+      });
+
       var resetBtn = document.createElement('button');
       resetBtn.className = 'channel-btn';
       resetBtn.textContent = '↺';
