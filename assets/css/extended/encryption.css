@@ -220,15 +220,14 @@ details.toc summary::-webkit-details-marker {
   details.toc .inner {
     display: block;
     font-size: 0.85em;
-    border-left: 2px solid var(--border);
-    padding-left: 6px;
+    padding-left: 4px;
     width: 100%;
     box-sizing: border-box;
     margin: 0;
   }
 
-  details.toc .inner ul {
-    padding-left: 24px;
+  details.toc .inner > ul {
+    padding-left: 4px;
     margin: 1px 0;
     list-style: none;
   }
@@ -243,6 +242,9 @@ details.toc summary::-webkit-details-marker {
     line-height: 1.4;
     display: block;
     padding: 2px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     transition: color 0.2s, border-color 0.2s;
   }
 
@@ -264,4 +266,5 @@ details.toc summary::-webkit-details-marker {
 
 /* TOC nested item indent (works at all widths) */
 details.toc .inner ul ul,
-details.toc .inner ul ul ul { padding-left: 24px; }
+details.toc .inner ul ul,
+details.toc .inner ul ul ul { padding-left: 4px; }
