@@ -48,7 +48,7 @@
 
   // ---- RGB565 decode ----
   function c565(c) {
-    return [((c>>11)&31)*255/31|0, ((c>>5)&63)*255/63|0, (c&31)*255/31|0];
+    return [((c>>11)&31)*255/31, ((c>>5)&63)*255/63, (c&31)*255/31];
   }
 
   // =============================================================================
@@ -251,11 +251,11 @@
       var idx=(bits>>(2*(y*4+x)))&3, p=(y*4+x)*4;
       if (c0>c1) {
         if (idx<2) { dst[p]=col[idx][0];dst[p+1]=col[idx][1];dst[p+2]=col[idx][2];dst[p+3]=255; }
-        else if (idx<3) { dst[p]=(2*col[0][0]+col[1][0])/3|0;dst[p+1]=(2*col[0][1]+col[1][1])/3|0;dst[p+2]=(2*col[0][2]+col[1][2])/3|0;dst[p+3]=255; }
-        else { dst[p]=(col[0][0]+2*col[1][0])/3|0;dst[p+1]=(col[0][1]+2*col[1][1])/3|0;dst[p+2]=(col[0][2]+2*col[1][2])/3|0;dst[p+3]=255; }
+        else if (idx<3) { dst[p]=(2*col[0][0]+col[1][0])/3;dst[p+1]=(2*col[0][1]+col[1][1])/3;dst[p+2]=(2*col[0][2]+col[1][2])/3;dst[p+3]=255; }
+        else { dst[p]=(col[0][0]+2*col[1][0])/3;dst[p+1]=(col[0][1]+2*col[1][1])/3;dst[p+2]=(col[0][2]+2*col[1][2])/3;dst[p+3]=255; }
       } else {
         if (idx<2) { dst[p]=col[idx][0];dst[p+1]=col[idx][1];dst[p+2]=col[idx][2];dst[p+3]=255; }
-        else if (idx<3) { dst[p]=(col[0][0]+col[1][0])/2|0;dst[p+1]=(col[0][1]+col[1][1])/2|0;dst[p+2]=(col[0][2]+col[1][2])/2|0;dst[p+3]=255; }
+        else if (idx<3) { dst[p]=(col[0][0]+col[1][0])/2;dst[p+1]=(col[0][1]+col[1][1])/2;dst[p+2]=(col[0][2]+col[1][2])/2;dst[p+3]=255; }
         else { dst[p]=0;dst[p+1]=0;dst[p+2]=0;dst[p+3]=0; }
       }
     }
@@ -268,8 +268,8 @@
     for(var y=0;y<4;y++) for(var x=0;x<4;x++) {
       var bp=3*(y*4+x), idx=bp<32?(bLo>>>bp)&7:(bHi>>>(bp-32))&7, p=(y*4+x)*4, v;
       if (idx===0) v=r0; else if (idx===1) v=r1;
-      else if (r0>r1) v=((8-idx)*r0+(idx-1)*r1)/7|0;
-      else if (idx<6) v=((6-idx)*r0+(idx-1)*r1)/5|0;
+      else if (r0>r1) v=((8-idx)*r0+(idx-1)*r1)/7;
+      else if (idx<6) v=((6-idx)*r0+(idx-1)*r1)/5;
       else v=idx===6?0:255;
       dst[p]=v;dst[p+1]=v;dst[p+2]=v;dst[p+3]=255;
     }
@@ -282,8 +282,8 @@
     for(var y=0;y<4;y++) for(var x=0;x<4;x++) {
       var bp=3*(y*4+x), idx=bp<32?(bLo>>>bp)&7:(bHi>>>(bp-32))&7, p=(y*4+x)*4;
       if (idx===0) dst[p+ch]=r0; else if (idx===1) dst[p+ch]=r1;
-      else if(r0>r1) dst[p+ch]=((8-idx)*r0+(idx-1)*r1)/7|0;
-      else if(idx<6) dst[p+ch]=((6-idx)*r0+(idx-1)*r1)/5|0;
+      else if(r0>r1) dst[p+ch]=((8-idx)*r0+(idx-1)*r1)/7;
+      else if(idx<6) dst[p+ch]=((6-idx)*r0+(idx-1)*r1)/5;
       else dst[p+ch]=idx===6?0:255;
     }
   }
@@ -304,7 +304,7 @@
       else if(r0>r1) v=(f0*(8-idx)+f1*(idx-1))/7;
       else if(idx===6) v=-1.0; else if(idx===7) v=1.0;
       else v=(f0*(5-idx)+f1*(idx-1))/5;
-      var vv=(v+1.0)*127.5|0; dst[p]=vv;dst[p+1]=vv;dst[p+2]=vv;dst[p+3]=255;
+      var vv=(v+1.0)*127.5; dst[p]=vv;dst[p+1]=vv;dst[p+2]=vv;dst[p+3]=255;
     }
   }
 
@@ -321,7 +321,7 @@
       else if(r0>r1) v=(f0*(8-idx)+f1*(idx-1))/7;
       else if(idx===6) v=-1.0; else if(idx===7) v=1.0;
       else v=(f0*(5-idx)+f1*(idx-1))/5;
-      dst[p+ch]=(v+1.0)*127.5|0;
+      dst[p+ch]=(v+1.0)*127.5;
     }
   }
 

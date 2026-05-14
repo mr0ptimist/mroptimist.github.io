@@ -135,10 +135,10 @@ var EXR = (function(){
         if (!isFinite(v) || isNaN(v)) v = 0;
         v = Math.max(0, v);
         v = v / (v + 1.0);
-        out[i*4+c] = Math.min(255, Math.max(0, Math.pow(v, 1.0/2.2) * 255 | 0));
+        out[i*4+c] = Math.min(255, Math.max(0, Math.pow(v, 1.0/2.2) * 255));
       }
       var a = rgba[i*4+3];
-      out[i*4+3] = isFinite(a) && !isNaN(a) ? Math.min(255, Math.max(0, Math.pow(Math.max(0,a)/(Math.max(0,a)+1),1.0/2.2)*255|0)) : 255;
+      out[i*4+3] = isFinite(a) && !isNaN(a) ? Math.min(255, Math.max(0, Math.pow(Math.max(0,a)/(Math.max(0,a)+1),1.0/2.2)*255)) : 255;
     }
     return out;
   }

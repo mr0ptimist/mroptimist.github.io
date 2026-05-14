@@ -105,7 +105,7 @@
     var nextWorker = 0;
 
     var myScript = document.querySelector('script[src*="image-viewer.js"]');
-    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=17') : '/js/decode-worker.js?v=17';
+    var workerUrl = myScript ? myScript.src.replace(/image-viewer\.js(\?[^"]*)?$/, 'decode-worker.js?v=20') : '/js/decode-worker.js?v=20';
 
     for (var i = 0; i < NUM_WORKERS; i++) {
       var w = new Worker(workerUrl);
@@ -170,6 +170,16 @@
   function processImage(img, w, h, ddsPixels) {
     var straight = ddsPixels || null;
     var curW = w, curH = h;
+    // Range remap state
+    var normMin = 0, normMax = 1, curLo = 0, curHi = 1;
+    var rawPixels = null; // Float32Array (EXR only)
+    var ddsInfo0 = ddsCache.get(img.src);
+    var exrInfo0 = exrCache.get(img.src);
+    var fam0 = '';
+    var isExr = !!exrInfo0;
+    if (ddsInfo0) { normMin = ddsInfo0.normMin || 0; normMax = ddsInfo0.normMax || 1; rawPixels = ddsInfo0.rawPixels; fam0 = ddsInfo0.dds ? ddsInfo0.dds.fmt.family : ''; }
+    else if (exrInfo0) { normMin = exrInfo0.normMin || 0; normMax = exrInfo0.normMax || 1; rawPixels = exrInfo0.rawPixels; fam0 = 'EXR'; }
+    curLo = normMin; curHi = normMax;
     var wrapper = document.createElement('div');
     wrapper.className = 'channel-container';
 
@@ -249,7 +259,17 @@
             pxCache.set(img.src, straight);
           }
         }
-        var px = new Uint8ClampedArray(straight);
+        // Apply range remap first (DDS/EXR only)
+        var remapPx = straight;
+        if (ddsPixels || isExr) {
+          var needsRemap = curLo !== normMin || curHi !== normMax;
+          if (needsRemap && window.ColorRemap) {
+            remapPx = ColorRemap.remapPixels(straight, curLo, curHi, normMin, normMax, rawPixels);
+          } else {
+            remapPx = new Uint8ClampedArray(straight);
+          }
+        }
+        var px = new Uint8ClampedArray(remapPx);
         if (ch === 'RGB') {
           for (var i = 3; i < px.length; i += 4) px[i] = 255;
           tb.classList.remove('pinned');
@@ -288,6 +308,74 @@
     });
     tb.appendChild(flipBtn);
 
+    // --- Range remap sliders (DDS/EXR only) ---
+    var rangeRow = null, loSlider = null, hiSlider = null, loLabel = null, hiLabel = null;
+    var showRange = ColorRemap && ColorRemap.needsRange(fam0, isExr);
+    if (showRange) {
+      var rangeSpacer = document.createElement('div');
+      rangeSpacer.style.cssText = 'flex-basis:100%;height:0';
+      tb.appendChild(rangeSpacer);
+      rangeRow = document.createElement('div');
+      rangeRow.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:2px 3px;background:rgba(0,0,0,0.45);border-radius:3px;margin:1px 0;width:auto';
+
+      loLabel = document.createElement('span');
+      loLabel.style.cssText = 'color:#aaa;font-size:10px;min-width:28px;text-align:center';
+      loLabel.textContent = curLo.toFixed(2);
+
+      loSlider = document.createElement('input');
+      loSlider.type = 'range';
+      loSlider.min = normMin; loSlider.max = normMax; loSlider.step = (normMax - normMin) / 200; loSlider.value = curLo;
+      loSlider.style.cssText = 'width:50px;height:10px;cursor:pointer;accent-color:#666';
+      loSlider.title = 'Black point (Lo)';
+      loSlider.addEventListener('input', function(e) {
+        e.stopPropagation();
+        curLo = parseFloat(loSlider.value);
+        if (curLo > curHi) { curLo = curHi; loSlider.value = curLo; }
+        loLabel.textContent = curLo.toFixed(2);
+        renderRemapped();
+      });
+
+      hiLabel = document.createElement('span');
+      hiLabel.style.cssText = 'color:#fff;font-size:10px;min-width:28px;text-align:center';
+      hiLabel.textContent = curHi.toFixed(2);
+
+      hiSlider = document.createElement('input');
+      hiSlider.type = 'range';
+      hiSlider.min = normMin; hiSlider.max = normMax; hiSlider.step = (normMax - normMin) / 200; hiSlider.value = curHi;
+      hiSlider.style.cssText = 'width:50px;height:10px;cursor:pointer;accent-color:#e8eaed';
+      hiSlider.title = 'White point (Hi)';
+      hiSlider.addEventListener('input', function(e) {
+        e.stopPropagation();
+        curHi = parseFloat(hiSlider.value);
+        if (curHi < curLo) { curHi = curLo; hiSlider.value = curHi; }
+        hiLabel.textContent = curHi.toFixed(2);
+        renderRemapped();
+      });
+
+      var resetBtn = document.createElement('button');
+      resetBtn.className = 'channel-btn';
+      resetBtn.textContent = '↺';
+      resetBtn.title = 'Reset range';
+      resetBtn.addEventListener('click', function() {
+        curLo = normMin; curHi = normMax;
+        loSlider.value = curLo; hiSlider.value = curHi;
+        loLabel.textContent = curLo.toFixed(2); hiLabel.textContent = curHi.toFixed(2);
+        renderRemapped();
+      });
+
+      rangeRow.appendChild(loLabel);
+      rangeRow.appendChild(loSlider);
+      rangeRow.appendChild(hiSlider);
+      rangeRow.appendChild(hiLabel);
+      rangeRow.appendChild(resetBtn);
+      tb.appendChild(rangeRow);
+    }
+
+    function renderRemapped() {
+      var activeBtn = tb.querySelector('.channel-btn.active');
+      if (activeBtn) activeBtn.click();
+    }
+
     // --- bottom toolbar row (sampling) ---
     var bottomRow = document.createElement('div');
     bottomRow.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:3px;width:100%';
@@ -304,7 +392,6 @@
       cvs.forEach(function(cv) { cv.classList.toggle('sampling-nearest', samplingNearest); });
     });
     bottomRow.appendChild(samplingBtn);
-    tb.appendChild(bottomRow);
 
     // DDS/EXR: create canvas immediately
     var is1D = h === 1 && ddsPixels && ddsCache.get(img.src) && ddsCache.get(img.src).dds && ddsCache.get(img.src).dds.resDim === 2;
@@ -563,6 +650,11 @@
           }
           var mw = Math.max(1, cached.dds.w >> curMip);
           var mh = Math.max(1, cached.dds.h >> curMip);
+          // Update norm params and range sliders for new mip
+          normMin = cached.normMin || 0; normMax = cached.normMax || 1;
+          curLo = normMin; curHi = normMax;
+          if (loSlider) { loSlider.min = normMin; loSlider.max = normMax; loSlider.step = (normMax - normMin) / 200; loSlider.value = curLo; loLabel.textContent = curLo.toFixed(2); }
+          if (hiSlider) { hiSlider.min = normMin; hiSlider.max = normMax; hiSlider.step = (normMax - normMin) / 200; hiSlider.value = curHi; hiLabel.textContent = curHi.toFixed(2); }
           var cv = wrapper.querySelector('canvas');
           if (!cv) { cv = document.createElement('canvas'); cv.className = 'channel-canvas'; if (samplingNearest) cv.classList.add('sampling-nearest'); wrapper.appendChild(cv); }
           cv.width = mw; cv.height = mh;
@@ -752,7 +844,7 @@
         if (dds.fmt.isComp && dfam!=='BC1'&&dfam!=='BC3'&&dfam!=='BC4'&&dfam!=='BC5') {
           var mip0 = dds.getMip(0);
           if (!mip0) throw 'decode';
-          ddsCache.set(img.src, {dds:dds, mip0:mip0});
+          ddsCache.set(img.src, {dds:dds, mip0:mip0, normMin:0, normMax:1, rawPixels:null});
           img.style.outline = '';
           processImage(img, dds.w, dds.h, mip0);
           return;
@@ -767,7 +859,7 @@
         decodeWorker.decode('dds', buf, function(result) {
           img.style.outline = '';
           if (!result.ok) { showErrorPlaceholder(img, dds.w, dds.h); return; }
-          ddsCache.set(img.src, {dds:dds, mip0:result.pixels});
+          ddsCache.set(img.src, {dds:dds, mip0:result.pixels, normMin:result.normMin, normMax:result.normMax, rawPixels:result.rawPixels});
           processImage(img, result.w, result.h, result.pixels);
         }, false, typeOverride, targetDim);
       }).catch(function(e){ img.style.outline = ''; showErrorPlaceholder(img); });
@@ -789,7 +881,7 @@
         decodeWorker.decode('exr', buf, function(result) {
           img.style.outline = '';
           if (!result.ok) { showErrorPlaceholder(img); return; }
-          exrCache.set(img.src, {exr:{w:result.w,h:result.h}, rgba8:result.pixels});
+          exrCache.set(img.src, {exr:{w:result.w,h:result.h}, rgba8:result.pixels, rawPixels:result.rawPixels, normMin:result.normMin, normMax:result.normMax});
           processImage(img, result.w, result.h, result.pixels);
         }, true);
       }).catch(function(){ img.style.outline = ''; showErrorPlaceholder(img); });

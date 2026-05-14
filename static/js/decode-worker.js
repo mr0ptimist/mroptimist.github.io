@@ -16,7 +16,7 @@
 // =============================================================================
 (function(){
   var base = self.location.href.replace(/[^/]+$/, '');
-  importScripts(base + 'worker-shared.js?v=17', base + 'exr-parser.js');
+  importScripts(base + 'worker-shared.js?v=20', base + 'exr-parser.js');
 
   var S = self.ImageCodecShared;
   if (!S) throw new Error('ImageCodecShared not available in worker');
@@ -44,12 +44,15 @@
     return { w:w, h:h, fmt:fmt, data:mip0_data };
   }
 
+  var _rawF = null, _normMin = undefined, _normMax = undefined;
+
   function decodeDDS(dds, step) {
     var w = dds.w, h = dds.h, data = dds.data, fam = dds.fmt.family;
     step = step || 1;
     var outW = step > 1 ? Math.ceil(w / step) : w;
     var outH = step > 1 ? Math.ceil(h / step) : h;
     var px = new Uint8ClampedArray(outW * outH * 4);
+    _rawF = null; _normMin = undefined; _normMax = undefined;
 
     if (step === 1) {
     if (fam==='RGBG') {
@@ -78,7 +81,7 @@
     }
     if (fam==='R10G10B10A2') {
       var s32 = new Uint32Array(data.buffer, data.byteOffset, w*h);
-      for (var j=0;j<w*h;j++) { var p=s32[j]; px[j*4]=(p&0x3FF)*255/1023|0; px[j*4+1]=((p>>>10)&0x3FF)*255/1023|0; px[j*4+2]=((p>>>20)&0x3FF)*255/1023|0; px[j*4+3]=(p>>>30)*255/3|0; }
+      for (var j=0;j<w*h;j++) { var p=s32[j]; px[j*4]=(p&0x3FF)*255/1023; px[j*4+1]=((p>>>10)&0x3FF)*255/1023; px[j*4+2]=((p>>>20)&0x3FF)*255/1023; px[j*4+3]=(p>>>30)*255/3; }
       if (dds.fmt.swapRB) { for (var j=0;j<px.length;j+=4) { var t=px[j]; px[j]=px[j+2]; px[j+2]=t; } }
       return px;
     }
@@ -89,9 +92,9 @@
         var r = S.h2f_r11g11b10(p & 0x7FF);
         var g = S.h2f_r11g11b10((p >>> 11) & 0x7FF);
         var b = S.h2f_r10((p >>> 22) & 0x3FF);
-        px[j*4]=Math.min(255,Math.max(0,r*255|0));
-        px[j*4+1]=Math.min(255,Math.max(0,g*255|0));
-        px[j*4+2]=Math.min(255,Math.max(0,b*255|0));
+        px[j*4]=Math.min(255,Math.max(0,r*255));
+        px[j*4+1]=Math.min(255,Math.max(0,g*255));
+        px[j*4+2]=Math.min(255,Math.max(0,b*255));
         px[j*4+3]=255;
       }
       return px;
@@ -110,7 +113,7 @@
       for (var j=0;j<n;j++) {
         var sr = data[j*2] > 127 ? (data[j*2] - 256) / 127.0 : data[j*2] / 127.0;
         var sg = data[j*2+1] > 127 ? (data[j*2+1] - 256) / 127.0 : data[j*2+1] / 127.0;
-        px[j*4]=(sr-fminR)*frR|0; px[j*4+1]=(sg-fminG)*frG|0; px[j*4+2]=0; px[j*4+3]=255;
+        px[j*4]=(sr-fminR)*frR; px[j*4+1]=(sg-fminG)*frG; px[j*4+2]=0; px[j*4+3]=255;
       }
       return px;
     }
@@ -124,14 +127,14 @@
       var fr = fmax>fmin ? 255/(fmax-fmin) : 1;
       for (var j=0;j<n;j++) {
         var sv = data[j] > 127 ? (data[j] - 256) / 127.0 : data[j] / 127.0;
-        var vv = (sv-fmin)*fr|0;
+        var vv = (sv-fmin)*fr;
         px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255;
       }
       return px;
     }
     if (fam==='R16G16') {
       var s16 = new Uint16Array(data.buffer, data.byteOffset, w*h*2);
-      for (var j=0;j<w*h;j++) { px[j*4]=s16[j*2]*255/65535|0; px[j*4+1]=s16[j*2+1]*255/65535|0; px[j*4+2]=0; px[j*4+3]=255; }
+      for (var j=0;j<w*h;j++) { px[j*4]=s16[j*2]*255/65535; px[j*4+1]=s16[j*2+1]*255/65535; px[j*4+2]=0; px[j*4+3]=255; }
       return px;
     }
     if (fam==='R16G16F') {
@@ -144,9 +147,10 @@
       }
       var frR = fmaxR>fminR ? 255/(fmaxR-fminR) : 1;
       var frG = fmaxG>fminG ? 255/(fmaxG-fminG) : 1;
+      _normMin = Math.min(fminR, fminG); _normMax = Math.max(fmaxR, fmaxG);
       for (var j=0;j<w*h;j++) {
-        px[j*4]   = (S.halfToFloat(s16f[j*2])-fminR)*frR|0;
-        px[j*4+1] = (S.halfToFloat(s16f[j*2+1])-fminG)*frG|0;
+        px[j*4]   = (S.halfToFloat(s16f[j*2])-fminR)*frR;
+        px[j*4+1] = (S.halfToFloat(s16f[j*2+1])-fminG)*frG;
         px[j*4+2] = 0; px[j*4+3] = 255;
       }
       return px;
@@ -156,7 +160,8 @@
       var mn=65535, mx=0;
       for (var j=0;j<su.length;j++) { if(su[j]<mn)mn=su[j]; if(su[j]>mx)mx=su[j]; }
       var rng = mx>mn ? 255/(mx-mn) : 1;
-      for (var j=0;j<w*h;j++) { var vv=(su[j]-mn)*rng|0; px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255; }
+      _normMin = mn/65535; _normMax = mx/65535;
+      for (var j=0;j<w*h;j++) { var vv=(su[j]-mn)*rng; px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255; }
       return px;
     }
     if (fam==='R16F') {
@@ -164,7 +169,8 @@
       var fmn=1e9, fmx=-1e9;
       for (var j=0;j<su.length;j++) { var f=S.halfToFloat(su[j]); if(isFinite(f)) { if(f<fmn)fmn=f; if(f>fmx)fmx=f; } }
       var fr = fmx>fmn ? 255/(fmx-fmn) : 1;
-      for (var j=0;j<w*h;j++) { var vv=(S.halfToFloat(su[j])-fmn)*fr|0; px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255; }
+      _normMin = fmn; _normMax = fmx;
+      for (var j=0;j<w*h;j++) { var vv=(S.halfToFloat(su[j])-fmn)*fr; px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255; }
       return px;
     }
     if (fam==='D32S8') {
@@ -172,7 +178,13 @@
       var dmn=1e9, dmx=-1e9, n=w*h;
       for (var j=0;j<n;j++) { var dv=allF[j*2]; if(isFinite(dv)) { if(dv<dmn)dmn=dv; if(dv>dmx)dmx=dv; } }
       var dr = dmx>dmn ? 255/(dmx-dmn) : 1;
-      for (var j=0;j<n;j++) { var dv=isFinite(allF[j*2]) ? (allF[j*2]-dmn)*dr|0 : 0; px[j*4]=dv; px[j*4+1]=dv; px[j*4+2]=dv; px[j*4+3]=255; }
+      // Build raw float RGBA for remap (depth in R, 0 in G/B, 1 in A)
+      _rawF = new Float32Array(w*h*4);
+      for (var j=0;j<n;j++) {
+        var dv = isFinite(allF[j*2]) ? allF[j*2] : 0;
+        px[j*4]=(dv-dmn)*dr; px[j*4+1]=(dv-dmn)*dr; px[j*4+2]=(dv-dmn)*dr; px[j*4+3]=255;
+        _rawF[j*4]=dv; _rawF[j*4+1]=dv; _rawF[j*4+2]=dv; _rawF[j*4+3]=1;
+      }
       return px;
     }
     if (fam==='R32F') {
@@ -180,12 +192,13 @@
       var mn32=1e9, mx32=-1e9;
       for (var j=0;j<f32w.length;j++) { var v=f32w[j]; if(isFinite(v)) { if(v<mn32)mn32=v; if(v>mx32)mx32=v; } }
       var rng32 = mx32>mn32 ? 255/(mx32-mn32) : 1;
-      for (var j=0;j<f32w.length;j++) { var v=isFinite(f32w[j]) ? (f32w[j]-mn32)*rng32|0 : 0; px[j*4]=v; px[j*4+1]=v; px[j*4+2]=v; px[j*4+3]=255; }
+      _rawF = new Float32Array(w*h*4);
+      for (var j=0;j<f32w.length;j++) { var v=isFinite(f32w[j]) ? f32w[j] : 0; px[j*4]=(v-mn32)*rng32; px[j*4+1]=(v-mn32)*rng32; px[j*4+2]=(v-mn32)*rng32; px[j*4+3]=255; _rawF[j*4]=v; _rawF[j*4+1]=v; _rawF[j*4+2]=v; _rawF[j*4+3]=1; }
       return px;
     }
     if (fam==='RGBA16') {
       var u16w = new Uint16Array(data.buffer, data.byteOffset, w*h*4);
-      for (var j=0;j<w*h;j++) { px[j*4]=u16w[j*4]*255/65535|0; px[j*4+1]=u16w[j*4+1]*255/65535|0; px[j*4+2]=u16w[j*4+2]*255/65535|0; px[j*4+3]=u16w[j*4+3]*255/65535|0; }
+      for (var j=0;j<w*h;j++) { px[j*4]=u16w[j*4]*255/65535; px[j*4+1]=u16w[j*4+1]*255/65535; px[j*4+2]=u16w[j*4+2]*255/65535; px[j*4+3]=u16w[j*4+3]*255/65535; }
       return px;
     }
     if (fam==='RGBA64F') {
@@ -193,7 +206,8 @@
       var fmnw=1e9, fmxw=-1e9;
       for (var j=0;j<u16hw.length;j++) { var f=S.halfToFloat(u16hw[j]); if(isFinite(f)) { if(f<fmnw)fmnw=f; if(f>fmxw)fmxw=f; } }
       var frw = fmxw>fmnw ? 255/(fmxw-fmnw) : 1;
-      for (var j=0;j<w*h;j++) { px[j*4]=(S.halfToFloat(u16hw[j*4])-fmnw)*frw|0; px[j*4+1]=(S.halfToFloat(u16hw[j*4+1])-fmnw)*frw|0; px[j*4+2]=(S.halfToFloat(u16hw[j*4+2])-fmnw)*frw|0; px[j*4+3]=255; }
+      _normMin = fmnw; _normMax = fmxw;
+      for (var j=0;j<w*h;j++) { px[j*4]=(S.halfToFloat(u16hw[j*4])-fmnw)*frw; px[j*4+1]=(S.halfToFloat(u16hw[j*4+1])-fmnw)*frw; px[j*4+2]=(S.halfToFloat(u16hw[j*4+2])-fmnw)*frw; px[j*4+3]=255; }
       return px;
     }
     if (fam==='RGB9E5') {
@@ -205,9 +219,10 @@
         if(isFinite(r)){if(r<emnR)emnR=r;if(r>emxR)emxR=r;} if(isFinite(g)){if(g<emnG)emnG=g;if(g>emxG)emxG=g;} if(isFinite(b)){if(b<emnB)emnB=b;if(b>emxB)emxB=b;}
       }
       var erR=emxR>emnR?255/(emxR-emnR):1, erG=emxG>emnG?255/(emxG-emnG):1, erB=emxB>emnB?255/(emxB-emnB):1;
+      _normMin=Math.min(emnR,emnG,emnB); _normMax=Math.max(emxR,emxG,emxB);
       for (var j=0;j<w*h;j++) {
         var p=s32e[j], exp=(p>>>27)&0x1F, sc=Math.pow(2,exp-15);
-        px[j*4]=Math.min(255,Math.max(0,((p&0x1FF)*sc-emnR)*erR|0)); px[j*4+1]=Math.min(255,Math.max(0,(((p>>>9)&0x1FF)*sc-emnG)*erG|0)); px[j*4+2]=Math.min(255,Math.max(0,(((p>>>18)&0x1FF)*sc-emnB)*erB|0)); px[j*4+3]=255;
+        px[j*4]=Math.min(255,Math.max(0,((p&0x1FF)*sc-emnR)*erR)); px[j*4+1]=Math.min(255,Math.max(0,(((p>>>9)&0x1FF)*sc-emnG)*erG)); px[j*4+2]=Math.min(255,Math.max(0,(((p>>>18)&0x1FF)*sc-emnB)*erB)); px[j*4+3]=255;
       }
       return px;
     }
@@ -216,7 +231,8 @@
       var fmn=1e9, fmx=-1e9;
       for (var j=0;j<f128.length;j++) { var v=f128[j]; if(isFinite(v)){if(v<fmn)fmn=v;if(v>fmx)fmx=v;} }
       var fr=fmx>fmn?255/(fmx-fmn):1;
-      for (var j=0;j<w*h;j++) { px[j*4]=Math.min(255,Math.max(0,(f128[j*4]-fmn)*fr|0)); px[j*4+1]=Math.min(255,Math.max(0,(f128[j*4+1]-fmn)*fr|0)); px[j*4+2]=Math.min(255,Math.max(0,(f128[j*4+2]-fmn)*fr|0)); px[j*4+3]=255; }
+      _normMin=fmn; _normMax=fmx;
+      for (var j=0;j<w*h;j++) { px[j*4]=Math.min(255,Math.max(0,(f128[j*4]-fmn)*fr)); px[j*4+1]=Math.min(255,Math.max(0,(f128[j*4+1]-fmn)*fr)); px[j*4+2]=Math.min(255,Math.max(0,(f128[j*4+2]-fmn)*fr)); px[j*4+3]=255; }
       return px;
     }
     if (fam==='RGB96F') {
@@ -224,7 +240,8 @@
       var fmn=1e9, fmx=-1e9;
       for (var j=0;j<f96.length;j++) { var v=f96[j]; if(isFinite(v)){if(v<fmn)fmn=v;if(v>fmx)fmx=v;} }
       var fr=fmx>fmn?255/(fmx-fmn):1;
-      for (var j=0;j<w*h;j++) { px[j*4]=Math.min(255,Math.max(0,(f96[j*3]-fmn)*fr|0)); px[j*4+1]=Math.min(255,Math.max(0,(f96[j*3+1]-fmn)*fr|0)); px[j*4+2]=Math.min(255,Math.max(0,(f96[j*3+2]-fmn)*fr|0)); px[j*4+3]=255; }
+      _normMin=fmn; _normMax=fmx;
+      for (var j=0;j<w*h;j++) { px[j*4]=Math.min(255,Math.max(0,(f96[j*3]-fmn)*fr)); px[j*4+1]=Math.min(255,Math.max(0,(f96[j*3+1]-fmn)*fr)); px[j*4+2]=Math.min(255,Math.max(0,(f96[j*3+2]-fmn)*fr)); px[j*4+3]=255; }
       return px;
     }
     if (fam==='R32G32F') {
@@ -232,12 +249,13 @@
       var fmnR=1e9,fmxR=-1e9,fmnG=1e9,fmxG=-1e9;
       for (var j=0;j<w*h;j++) { var fr=f32g[j*2],fg=f32g[j*2+1]; if(isFinite(fr)){if(fr<fmnR)fmnR=fr;if(fr>fmxR)fmxR=fr;} if(isFinite(fg)){if(fg<fmnG)fmnG=fg;if(fg>fmxG)fmxG=fg;} }
       var frR=fmxR>fmnR?255/(fmxR-fmnR):1, frG=fmxG>fmnG?255/(fmxG-fmnG):1;
-      for (var j=0;j<w*h;j++) { px[j*4]=Math.min(255,Math.max(0,(f32g[j*2]-fmnR)*frR|0)); px[j*4+1]=Math.min(255,Math.max(0,(f32g[j*2+1]-fmnG)*frG|0)); px[j*4+2]=0; px[j*4+3]=255; }
+      _normMin=Math.min(fmnR,fmnG); _normMax=Math.max(fmxR,fmxG);
+      for (var j=0;j<w*h;j++) { px[j*4]=Math.min(255,Math.max(0,(f32g[j*2]-fmnR)*frR)); px[j*4+1]=Math.min(255,Math.max(0,(f32g[j*2+1]-fmnG)*frG)); px[j*4+2]=0; px[j*4+3]=255; }
       return px;
     }
     if (fam==='D24S8') {
       var s32d = new Uint32Array(data.buffer, data.byteOffset, w*h);
-      for (var j=0;j<w*h;j++) { var d=(s32d[j]&0xFFFFFF)/0xFFFFFF*255|0; px[j*4]=d; px[j*4+1]=d; px[j*4+2]=d; px[j*4+3]=255; }
+      for (var j=0;j<w*h;j++) { var d=(s32d[j]&0xFFFFFF)/0xFFFFFF*255; px[j*4]=d; px[j*4+1]=d; px[j*4+2]=d; px[j*4+3]=255; }
       return px;
     }
     if (fam==='RGBA8S') {
@@ -246,17 +264,17 @@
         var sg=data[j*4+1]>127?(data[j*4+1]-256)/127.0:data[j*4+1]/127.0;
         var sb=data[j*4+2]>127?(data[j*4+2]-256)/127.0:data[j*4+2]/127.0;
         var sa=data[j*4+3]>127?(data[j*4+3]-256)/127.0:data[j*4+3]/127.0;
-        px[j*4]=(sr*0.5+0.5)*255|0; px[j*4+1]=(sg*0.5+0.5)*255|0;
-        px[j*4+2]=(sb*0.5+0.5)*255|0; px[j*4+3]=(sa*0.5+0.5)*255|0;
+        px[j*4]=(sr*0.5+0.5)*255; px[j*4+1]=(sg*0.5+0.5)*255;
+        px[j*4+2]=(sb*0.5+0.5)*255; px[j*4+3]=(sa*0.5+0.5)*255;
       } return px;
     }
     if (fam==='RGBA16S') {
       var si16 = new Int16Array(data.buffer, data.byteOffset, w*h*4);
       for (var j=0;j<w*h;j++) {
-        px[j*4]=(si16[j*4]/32767.0*0.5+0.5)*255|0;
-        px[j*4+1]=(si16[j*4+1]/32767.0*0.5+0.5)*255|0;
-        px[j*4+2]=(si16[j*4+2]/32767.0*0.5+0.5)*255|0;
-        px[j*4+3]=(si16[j*4+3]/32767.0*0.5+0.5)*255|0;
+        px[j*4]=(si16[j*4]/32767.0*0.5+0.5)*255;
+        px[j*4+1]=(si16[j*4+1]/32767.0*0.5+0.5)*255;
+        px[j*4+2]=(si16[j*4+2]/32767.0*0.5+0.5)*255;
+        px[j*4+3]=(si16[j*4+3]/32767.0*0.5+0.5)*255;
       } return px;
     }
     if (fam==='R16G16S') {
@@ -264,7 +282,7 @@
       var fminR=1e9, fmaxR=-1e9, fminG=1e9, fmaxG=-1e9;
       for (var j=0;j<w*h;j++) { var fr=si16g[j*2]/32767.0, fg=si16g[j*2+1]/32767.0; if(fr<fminR)fminR=fr; if(fr>fmaxR)fmaxR=fr; if(fg<fminG)fminG=fg; if(fg>fmaxG)fmaxG=fg; }
       var rr=fmaxR>fminR?255/(fmaxR-fminR):1, rg=fmaxG>fminG?255/(fmaxG-fminG):1;
-      for (var j=0;j<w*h;j++) { px[j*4]=(si16g[j*2]/32767.0-fminR)*rr|0; px[j*4+1]=(si16g[j*2+1]/32767.0-fminG)*rg|0; px[j*4+2]=0; px[j*4+3]=255; }
+      for (var j=0;j<w*h;j++) { px[j*4]=(si16g[j*2]/32767.0-fminR)*rr; px[j*4+1]=(si16g[j*2+1]/32767.0-fminG)*rg; px[j*4+2]=0; px[j*4+3]=255; }
       return px;
     }
     if (fam==='R16S') {
@@ -272,17 +290,17 @@
       var fmin=1e9, fmax=-1e9;
       for (var j=0;j<si16v.length;j++) { var v=si16v[j]/32767.0; if(v<fmin)fmin=v; if(v>fmax)fmax=v; }
       var rr=fmax>fmin?255/(fmax-fmin):1;
-      for (var j=0;j<w*h;j++) { var vv=(si16v[j]/32767.0-fmin)*rr|0; px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255; }
+      for (var j=0;j<w*h;j++) { var vv=(si16v[j]/32767.0-fmin)*rr; px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255; }
       return px;
     }
     if (fam==='B5G6R5') {
       var su16b = new Uint16Array(data.buffer, data.byteOffset, w*h);
-      for (var j=0;j<w*h;j++) { var p=su16b[j]; px[j*4]=((p>>>11)&0x1F)*255/31|0; px[j*4+1]=((p>>>5)&0x3F)*255/63|0; px[j*4+2]=(p&0x1F)*255/31|0; px[j*4+3]=255; }
+      for (var j=0;j<w*h;j++) { var p=su16b[j]; px[j*4]=((p>>>11)&0x1F)*255/31; px[j*4+1]=((p>>>5)&0x3F)*255/63; px[j*4+2]=(p&0x1F)*255/31; px[j*4+3]=255; }
       return px;
     }
     if (fam==='B5G5R5A1') {
       var su16a = new Uint16Array(data.buffer, data.byteOffset, w*h);
-      for (var j=0;j<w*h;j++) { var p=su16a[j]; px[j*4]=((p>>>10)&0x1F)*255/31|0; px[j*4+1]=((p>>>5)&0x1F)*255/31|0; px[j*4+2]=(p&0x1F)*255/31|0; px[j*4+3]=(p>>>15)?255:0; }
+      for (var j=0;j<w*h;j++) { var p=su16a[j]; px[j*4]=((p>>>10)&0x1F)*255/31; px[j*4+1]=((p>>>5)&0x1F)*255/31; px[j*4+2]=(p&0x1F)*255/31; px[j*4+3]=(p>>>15)?255:0; }
       return px;
     }
     if (fam==='ARGB4') {
@@ -325,8 +343,8 @@
       var s32=new Uint32Array(data.buffer,data.byteOffset,w*h);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,p=s32[si];
-        px[di]=(p&0x3FF)*255/1023|0;px[di+1]=((p>>>10)&0x3FF)*255/1023|0;
-        px[di+2]=((p>>>20)&0x3FF)*255/1023|0;px[di+3]=(p>>>30)*255/3|0;
+        px[di]=(p&0x3FF)*255/1023;px[di+1]=((p>>>10)&0x3FF)*255/1023;
+        px[di+2]=((p>>>20)&0x3FF)*255/1023;px[di+3]=(p>>>30)*255/3;
       }
       if (dds.fmt.swapRB) { for (var j=0;j<px.length;j+=4) { var t=px[j]; px[j]=px[j+2]; px[j+2]=t; } }
       return px;
@@ -336,8 +354,8 @@
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,p=s32b[si];
         var r=S.h2f_r11g11b10(p&0x7FF),g=S.h2f_r11g11b10((p>>>11)&0x7FF),b=S.h2f_r10((p>>>22)&0x3FF);
-        px[di]=Math.min(255,Math.max(0,r*255|0));px[di+1]=Math.min(255,Math.max(0,g*255|0));
-        px[di+2]=Math.min(255,Math.max(0,b*255|0));px[di+3]=255;
+        px[di]=Math.min(255,Math.max(0,r*255));px[di+1]=Math.min(255,Math.max(0,g*255));
+        px[di+2]=Math.min(255,Math.max(0,b*255));px[di+3]=255;
       } return px;
     }
     if (fam==='R8G8') {
@@ -353,7 +371,7 @@
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
         var sr=data[si*2]>127?(data[si*2]-256)/127.0:data[si*2]/127.0,sg=data[si*2+1]>127?(data[si*2+1]-256)/127.0:data[si*2+1]/127.0;
-        px[di]=(sr-fminR)*frR|0;px[di+1]=(sg-fminG)*frG|0;px[di+2]=0;px[di+3]=255;
+        px[di]=(sr-fminR)*frR;px[di+1]=(sg-fminG)*frG;px[di+2]=0;px[di+3]=255;
       } return px;
     }
     if (fam==='R8') {
@@ -368,31 +386,33 @@
       var fr=fmax>fmin?255/(fmax-fmin):1;
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,sv=data[si]>127?(data[si]-256)/127.0:data[si]/127.0;
-        var vv=(sv-fmin)*fr|0;px[di]=vv;px[di+1]=vv;px[di+2]=vv;px[di+3]=255;
+        var vv=(sv-fmin)*fr;px[di]=vv;px[di+1]=vv;px[di+2]=vv;px[di+3]=255;
       } return px;
     }
     if (fam==='R16G16') {
       var s16=new Uint16Array(data.buffer,data.byteOffset,w*h*2);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
-        px[di]=s16[si*2]*255/65535|0;px[di+1]=s16[si*2+1]*255/65535|0;px[di+2]=0;px[di+3]=255;
+        px[di]=s16[si*2]*255/65535;px[di+1]=s16[si*2+1]*255/65535;px[di+2]=0;px[di+3]=255;
       } return px;
     }
     if (fam==='R16G16F') {
       var s16f=new Uint16Array(data.buffer,data.byteOffset,w*h*2),fminR=1e9,fmaxR=-1e9,fminG=1e9,fmaxG=-1e9;
       for(var j=0;j<w*h;j++){var fr=S.halfToFloat(s16f[j*2]),fg=S.halfToFloat(s16f[j*2+1]);if(isFinite(fr)){if(fr<fminR)fminR=fr;if(fr>fmaxR)fmaxR=fr;}if(isFinite(fg)){if(fg<fminG)fminG=fg;if(fg>fmaxG)fmaxG=fg;}}
       var frR=fmaxR>fminR?255/(fmaxR-fminR):1,frG=fmaxG>fminG?255/(fmaxG-fminG):1;
+      _normMin=Math.min(fminR,fminG); _normMax=Math.max(fmaxR,fmaxG);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
-        px[di]=(S.halfToFloat(s16f[si*2])-fminR)*frR|0;px[di+1]=(S.halfToFloat(s16f[si*2+1])-fminG)*frG|0;px[di+2]=0;px[di+3]=255;
+        px[di]=(S.halfToFloat(s16f[si*2])-fminR)*frR;px[di+1]=(S.halfToFloat(s16f[si*2+1])-fminG)*frG;px[di+2]=0;px[di+3]=255;
       } return px;
     }
     if (fam==='R16') {
       var su=new Uint16Array(data.buffer,data.byteOffset,w*h),mn=65535,mx=0;
       for(var j=0;j<su.length;j++){if(su[j]<mn)mn=su[j];if(su[j]>mx)mx=su[j];}
       var rng=mx>mn?255/(mx-mn):1;
+      _normMin=mn/65535; _normMax=mx/65535;
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
-        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,vv=(su[si]-mn)*rng|0;
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,vv=(su[si]-mn)*rng;
         px[di]=vv;px[di+1]=vv;px[di+2]=vv;px[di+3]=255;
       } return px;
     }
@@ -400,8 +420,9 @@
       var su=new Uint16Array(data.buffer,data.byteOffset,w*h),fmn=1e9,fmx=-1e9;
       for(var j=0;j<su.length;j++){var f=S.halfToFloat(su[j]);if(isFinite(f)){if(f<fmn)fmn=f;if(f>fmx)fmx=f;}}
       var fr=fmx>fmn?255/(fmx-fmn):1;
+      _normMin=fmn; _normMax=fmx;
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
-        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,vv=(S.halfToFloat(su[si])-fmn)*fr|0;
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,vv=(S.halfToFloat(su[si])-fmn)*fr;
         px[di]=vv;px[di+1]=vv;px[di+2]=vv;px[di+3]=255;
       } return px;
     }
@@ -409,82 +430,93 @@
       var allF=new Float32Array(data.buffer,data.byteOffset,w*h*2),dmn=1e9,dmx=-1e9,n=w*h;
       for(var j=0;j<n;j++){var dv=allF[j*2];if(isFinite(dv)){if(dv<dmn)dmn=dv;if(dv>dmx)dmx=dv;}}
       var dr=dmx>dmn?255/(dmx-dmn):1;
+      _normMin=dmn; _normMax=dmx;
+      _rawF=new Float32Array(outW*outH*4);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
-        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,dv=isFinite(allF[si*2])?(allF[si*2]-dmn)*dr|0:0;
-        px[di]=dv;px[di+1]=dv;px[di+2]=dv;px[di+3]=255;
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,dv=isFinite(allF[si*2])?allF[si*2]:0;
+        px[di]=(dv-dmn)*dr;px[di+1]=(dv-dmn)*dr;px[di+2]=(dv-dmn)*dr;px[di+3]=255;
+        _rawF[di]=dv;_rawF[di+1]=dv;_rawF[di+2]=dv;_rawF[di+3]=1;
       } return px;
     }
     if (fam==='R32F') {
       var f32w=new Float32Array(data.buffer,data.byteOffset,w*h),mn32=1e9,mx32=-1e9;
       for(var j=0;j<f32w.length;j++){var v=f32w[j];if(isFinite(v)){if(v<mn32)mn32=v;if(v>mx32)mx32=v;}}
       var rng32=mx32>mn32?255/(mx32-mn32):1;
+      _normMin=mn32; _normMax=mx32;
+      _rawF=new Float32Array(outW*outH*4);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
-        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,v=isFinite(f32w[si])?(f32w[si]-mn32)*rng32|0:0;
-        px[di]=v;px[di+1]=v;px[di+2]=v;px[di+3]=255;
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,v=isFinite(f32w[si])?f32w[si]:0;
+        px[di]=(v-mn32)*rng32;px[di+1]=(v-mn32)*rng32;px[di+2]=(v-mn32)*rng32;px[di+3]=255;
+        _rawF[di]=v;_rawF[di+1]=v;_rawF[di+2]=v;_rawF[di+3]=1;
       } return px;
     }
     if (fam==='RGBA16') {
       var u16w=new Uint16Array(data.buffer,data.byteOffset,w*h*4);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
-        px[di]=u16w[si*4]*255/65535|0;px[di+1]=u16w[si*4+1]*255/65535|0;
-        px[di+2]=u16w[si*4+2]*255/65535|0;px[di+3]=u16w[si*4+3]*255/65535|0;
+        px[di]=u16w[si*4]*255/65535;px[di+1]=u16w[si*4+1]*255/65535;
+        px[di+2]=u16w[si*4+2]*255/65535;px[di+3]=u16w[si*4+3]*255/65535;
       } return px;
     }
     if (fam==='RGBA64F') {
       var u16hw=new Uint16Array(data.buffer,data.byteOffset,w*h*4),fmnw=1e9,fmxw=-1e9;
       for(var j=0;j<u16hw.length;j++){var f=S.halfToFloat(u16hw[j]);if(isFinite(f)){if(f<fmnw)fmnw=f;if(f>fmxw)fmxw=f;}}
       var frw=fmxw>fmnw?255/(fmxw-fmnw):1;
+      _normMin=fmnw; _normMax=fmxw;
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
-        px[di]=(S.halfToFloat(u16hw[si*4])-fmnw)*frw|0;px[di+1]=(S.halfToFloat(u16hw[si*4+1])-fmnw)*frw|0;
-        px[di+2]=(S.halfToFloat(u16hw[si*4+2])-fmnw)*frw|0;px[di+3]=255;
+        px[di]=(S.halfToFloat(u16hw[si*4])-fmnw)*frw;px[di+1]=(S.halfToFloat(u16hw[si*4+1])-fmnw)*frw;
+        px[di+2]=(S.halfToFloat(u16hw[si*4+2])-fmnw)*frw;px[di+3]=255;
       } return px;
     }
     if (fam==='RGB9E5') {
       var s32e=new Uint32Array(data.buffer,data.byteOffset,w*h),emnR=1e9,emxR=-1e9,emnG=1e9,emxG=-1e9,emnB=1e9,emxB=-1e9;
       for(var j=0;j<w*h;j++){var p=s32e[j],exp=(p>>>27)&0x1F,sc=Math.pow(2,exp-15);var r=(p&0x1FF)*sc,g=((p>>>9)&0x1FF)*sc,b=((p>>>18)&0x1FF)*sc;if(isFinite(r)){if(r<emnR)emnR=r;if(r>emxR)emxR=r;}if(isFinite(g)){if(g<emnG)emnG=g;if(g>emxG)emxG=g;}if(isFinite(b)){if(b<emnB)emnB=b;if(b>emxB)emxB=b;}}
       var erR=emxR>emnR?255/(emxR-emnR):1,erG=emxG>emnG?255/(emxG-emnG):1,erB=emxB>emnB?255/(emxB-emnB):1;
+      _normMin=Math.min(emnR,emnG,emnB); _normMax=Math.max(emxR,emxG,emxB);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,p=s32e[si],exp=(p>>>27)&0x1F,sc=Math.pow(2,exp-15);
-        px[di]=Math.min(255,Math.max(0,((p&0x1FF)*sc-emnR)*erR|0));px[di+1]=Math.min(255,Math.max(0,(((p>>>9)&0x1FF)*sc-emnG)*erG|0));
-        px[di+2]=Math.min(255,Math.max(0,(((p>>>18)&0x1FF)*sc-emnB)*erB|0));px[di+3]=255;
+        px[di]=Math.min(255,Math.max(0,((p&0x1FF)*sc-emnR)*erR));px[di+1]=Math.min(255,Math.max(0,(((p>>>9)&0x1FF)*sc-emnG)*erG));
+        px[di+2]=Math.min(255,Math.max(0,(((p>>>18)&0x1FF)*sc-emnB)*erB));px[di+3]=255;
       } return px;
     }
     if (fam==='RGBA128F') {
       var f128=new Float32Array(data.buffer,data.byteOffset,w*h*4),fmn=1e9,fmx=-1e9;
       for(var j=0;j<f128.length;j++){var v=f128[j];if(isFinite(v)){if(v<fmn)fmn=v;if(v>fmx)fmx=v;}}
       var fr=fmx>fmn?255/(fmx-fmn):1;
+      _normMin=fmn; _normMax=fmx;
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
-        px[di]=Math.min(255,Math.max(0,(f128[si*4]-fmn)*fr|0));px[di+1]=Math.min(255,Math.max(0,(f128[si*4+1]-fmn)*fr|0));
-        px[di+2]=Math.min(255,Math.max(0,(f128[si*4+2]-fmn)*fr|0));px[di+3]=255;
+        px[di]=Math.min(255,Math.max(0,(f128[si*4]-fmn)*fr));px[di+1]=Math.min(255,Math.max(0,(f128[si*4+1]-fmn)*fr));
+        px[di+2]=Math.min(255,Math.max(0,(f128[si*4+2]-fmn)*fr));px[di+3]=255;
       } return px;
     }
     if (fam==='RGB96F') {
       var f96=new Float32Array(data.buffer,data.byteOffset,w*h*3),fmn=1e9,fmx=-1e9;
       for(var j=0;j<f96.length;j++){var v=f96[j];if(isFinite(v)){if(v<fmn)fmn=v;if(v>fmx)fmx=v;}}
       var fr=fmx>fmn?255/(fmx-fmn):1;
+      _normMin=fmn; _normMax=fmx;
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
-        px[di]=Math.min(255,Math.max(0,(f96[si*3]-fmn)*fr|0));px[di+1]=Math.min(255,Math.max(0,(f96[si*3+1]-fmn)*fr|0));
-        px[di+2]=Math.min(255,Math.max(0,(f96[si*3+2]-fmn)*fr|0));px[di+3]=255;
+        px[di]=Math.min(255,Math.max(0,(f96[si*3]-fmn)*fr));px[di+1]=Math.min(255,Math.max(0,(f96[si*3+1]-fmn)*fr));
+        px[di+2]=Math.min(255,Math.max(0,(f96[si*3+2]-fmn)*fr));px[di+3]=255;
       } return px;
     }
     if (fam==='R32G32F') {
       var f32g=new Float32Array(data.buffer,data.byteOffset,w*h*2),fmnR=1e9,fmxR=-1e9,fmnG=1e9,fmxG=-1e9;
       for(var j=0;j<w*h;j++){var fr=f32g[j*2],fg=f32g[j*2+1];if(isFinite(fr)){if(fr<fmnR)fmnR=fr;if(fr>fmxR)fmxR=fr;}if(isFinite(fg)){if(fg<fmnG)fmnG=fg;if(fg>fmxG)fmxG=fg;}}
       var frR=fmxR>fmnR?255/(fmxR-fmnR):1,frG=fmxG>fmnG?255/(fmxG-fmnG):1;
+      _normMin=Math.min(fmnR,fmnG); _normMax=Math.max(fmxR,fmxG);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
-        px[di]=Math.min(255,Math.max(0,(f32g[si*2]-fmnR)*frR|0));px[di+1]=Math.min(255,Math.max(0,(f32g[si*2+1]-fmnG)*frG|0));
+        px[di]=Math.min(255,Math.max(0,(f32g[si*2]-fmnR)*frR));px[di+1]=Math.min(255,Math.max(0,(f32g[si*2+1]-fmnG)*frG));
         px[di+2]=0;px[di+3]=255;
       } return px;
     }
     if (fam==='D24S8') {
       var s32d=new Uint32Array(data.buffer,data.byteOffset,w*h);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
-        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,d=(s32d[si]&0xFFFFFF)/0xFFFFFF*255|0;
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,d=(s32d[si]&0xFFFFFF)/0xFFFFFF*255;
         px[di]=d;px[di+1]=d;px[di+2]=d;px[di+3]=255;
       } return px;
     }
@@ -495,16 +527,16 @@
         var sg=data[si+1]>127?(data[si+1]-256)/127.0:data[si+1]/127.0;
         var sb=data[si+2]>127?(data[si+2]-256)/127.0:data[si+2]/127.0;
         var sa=data[si+3]>127?(data[si+3]-256)/127.0:data[si+3]/127.0;
-        px[di]=(sr*0.5+0.5)*255|0;px[di+1]=(sg*0.5+0.5)*255|0;
-        px[di+2]=(sb*0.5+0.5)*255|0;px[di+3]=(sa*0.5+0.5)*255|0;
+        px[di]=(sr*0.5+0.5)*255;px[di+1]=(sg*0.5+0.5)*255;
+        px[di+2]=(sb*0.5+0.5)*255;px[di+3]=(sa*0.5+0.5)*255;
       } return px;
     }
     if (fam==='RGBA16S') {
       var si16=new Int16Array(data.buffer,data.byteOffset,w*h*4);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
-        px[di]=(si16[si*4]/32767.0*0.5+0.5)*255|0;px[di+1]=(si16[si*4+1]/32767.0*0.5+0.5)*255|0;
-        px[di+2]=(si16[si*4+2]/32767.0*0.5+0.5)*255|0;px[di+3]=(si16[si*4+3]/32767.0*0.5+0.5)*255|0;
+        px[di]=(si16[si*4]/32767.0*0.5+0.5)*255;px[di+1]=(si16[si*4+1]/32767.0*0.5+0.5)*255;
+        px[di+2]=(si16[si*4+2]/32767.0*0.5+0.5)*255;px[di+3]=(si16[si*4+3]/32767.0*0.5+0.5)*255;
       } return px;
     }
     if (fam==='R16G16S') {
@@ -513,7 +545,7 @@
       var rr=fmaxR>fminR?255/(fmaxR-fminR):1,rg=fmaxG>fminG?255/(fmaxG-fminG):1;
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4;
-        px[di]=(si16g[si*2]/32767.0-fminR)*rr|0;px[di+1]=(si16g[si*2+1]/32767.0-fminG)*rg|0;px[di+2]=0;px[di+3]=255;
+        px[di]=(si16g[si*2]/32767.0-fminR)*rr;px[di+1]=(si16g[si*2+1]/32767.0-fminG)*rg;px[di+2]=0;px[di+3]=255;
       } return px;
     }
     if (fam==='R16S') {
@@ -521,7 +553,7 @@
       for(var j=0;j<si16v.length;j++){var v=si16v[j]/32767.0;if(v<fmin)fmin=v;if(v>fmax)fmax=v;}
       var rr=fmax>fmin?255/(fmax-fmin):1;
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
-        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,vv=(si16v[si]/32767.0-fmin)*rr|0;
+        var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,vv=(si16v[si]/32767.0-fmin)*rr;
         px[di]=vv;px[di+1]=vv;px[di+2]=vv;px[di+3]=255;
       } return px;
     }
@@ -529,14 +561,14 @@
       var su16b=new Uint16Array(data.buffer,data.byteOffset,w*h);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,p=su16b[si];
-        px[di]=((p>>>11)&0x1F)*255/31|0;px[di+1]=((p>>>5)&0x3F)*255/63|0;px[di+2]=(p&0x1F)*255/31|0;px[di+3]=255;
+        px[di]=((p>>>11)&0x1F)*255/31;px[di+1]=((p>>>5)&0x3F)*255/63;px[di+2]=(p&0x1F)*255/31;px[di+3]=255;
       } return px;
     }
     if (fam==='B5G5R5A1') {
       var su16a=new Uint16Array(data.buffer,data.byteOffset,w*h);
       for(var oy=0;oy<outH;oy++) for(var ox=0;ox<outW;ox++) {
         var si=oy*step*w+ox*step,di=(oy*outW+ox)*4,p=su16a[si];
-        px[di]=((p>>>10)&0x1F)*255/31|0;px[di+1]=((p>>>5)&0x1F)*255/31|0;px[di+2]=(p&0x1F)*255/31|0;px[di+3]=(p>>>15)?255:0;
+        px[di]=((p>>>10)&0x1F)*255/31;px[di+1]=((p>>>5)&0x1F)*255/31;px[di+2]=(p&0x1F)*255/31;px[di+3]=(p>>>15)?255:0;
       } return px;
     }
     if (fam==='ARGB4') {
@@ -553,6 +585,29 @@
     }
 
     return null;
+  }
+
+  // ---- Normalize params helper ----
+  // Scan RGBA8 bytes to find the effective normalization range used during decode.
+  // For formats that auto-normalized (float/SNORM/depth), scan actual byte min/max
+  // and reverse-quantize to find the original data range.
+  // For formats with fixed [0,1] mapping, return nMin=0, nMax=1.
+  function normParams(dds) {
+    var fam = dds.fmt.family;
+    var famType = dds.fmt.type || '';
+    var isSNorm = famType.indexOf('SNORM') >= 0 || fam === 'R8S' || fam === 'R8G8S' || fam === 'RGBA8S' || fam === 'RGBA16S' || fam === 'R16S' || fam === 'R16G16S';
+    if (isSNorm) return {nMin: -1, nMax: 1};
+    if (_rawF) {
+      var lo = 1e9, hi = -1e9;
+      for (var j = 0; j < _rawF.length; j += 4) {
+        var v = _rawF[j];
+        if (isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+      }
+      if (lo >= hi) { lo = 0; hi = 1; }
+      return {nMin: lo, nMax: hi};
+    }
+    if (_normMin !== undefined) return {nMin: _normMin, nMax: _normMax};
+    return {nMin: 0, nMax: 1};
   }
 
   // ---- Message handler ----
@@ -572,18 +627,32 @@
         if (px) {
           var rw = step > 1 ? Math.ceil(dds.w / step) : dds.w;
           var rh = step > 1 ? Math.ceil(dds.h / step) : dds.h;
-          result = {w: rw, h: rh, pixels: px};
+          var np = normParams(dds);
+          result = {w: rw, h: rh, pixels: px, normMin: np.nMin, normMax: np.nMax, rawPixels: _rawF};
         }
       }
     } else if (msg.type === 'exr') {
       var exr = EXR.parse(msg.buffer);
       if (exr) {
         var px = EXR.toRGBA8(exr);
-        if (px) result = {w:exr.w, h:exr.h, pixels:px};
+        if (px) {
+          // Scan raw float pixels for min/max
+          var lo = 1e9, hi = -1e9;
+          if (exr.pixels) {
+            for (var i = 0; i < exr.pixels.length; i++) {
+              var v = exr.pixels[i];
+              if (isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+            }
+          }
+          if (lo >= hi) { lo = 0; hi = 1; }
+          result = {w:exr.w, h:exr.h, pixels:px, normMin: lo, normMax: hi, rawPixels: exr.pixels};
+        }
       }
     }
     if (result) {
-      self.postMessage({id:msg.id, ok:true, w:result.w, h:result.h, pixels:result.pixels}, [result.pixels.buffer]);
+      var transfer = [result.pixels.buffer];
+      if (result.rawPixels) transfer.push(result.rawPixels.buffer);
+      self.postMessage({id:msg.id, ok:true, w:result.w, h:result.h, pixels:result.pixels, normMin:result.normMin, normMax:result.normMax, rawPixels:result.rawPixels}, transfer);
     } else {
       self.postMessage({id:msg.id, ok:false});
     }

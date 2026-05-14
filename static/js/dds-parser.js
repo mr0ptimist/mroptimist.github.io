@@ -217,9 +217,9 @@ var DDS = (function(){
           var r = S.h2f_r11g11b10(p & 0x7FF);
           var g = S.h2f_r11g11b10((p >>> 11) & 0x7FF);
           var b = S.h2f_r10((p >>> 22) & 0x3FF);
-          px[j*4]=Math.min(255,Math.max(0,r*255|0));
-          px[j*4+1]=Math.min(255,Math.max(0,g*255|0));
-          px[j*4+2]=Math.min(255,Math.max(0,b*255|0));
+          px[j*4]=Math.min(255,Math.max(0,r*255));
+          px[j*4+1]=Math.min(255,Math.max(0,g*255));
+          px[j*4+2]=Math.min(255,Math.max(0,b*255));
           px[j*4+3]=255;
         }
         return px;
@@ -244,7 +244,7 @@ var DDS = (function(){
         for (var j=0;j<n;j++) {
           var sr = data[j*2] > 127 ? (data[j*2] - 256) / 127.0 : data[j*2] / 127.0;
           var sg = data[j*2+1] > 127 ? (data[j*2+1] - 256) / 127.0 : data[j*2+1] / 127.0;
-          px[j*4]=(sr-fminR)*frR|0; px[j*4+1]=(sg-fminG)*frG|0;
+          px[j*4]=(sr-fminR)*frR; px[j*4+1]=(sg-fminG)*frG;
           px[j*4+2]=0; px[j*4+3]=255;
         }
         return px;
@@ -265,7 +265,7 @@ var DDS = (function(){
         var fr = fmax>fmin ? 255/(fmax-fmin) : 1;
         for (var j=0;j<n;j++) {
           var sv = data[j] > 127 ? (data[j] - 256) / 127.0 : data[j] / 127.0;
-          var vv = (sv-fmin)*fr|0;
+          var vv = (sv-fmin)*fr;
           px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255;
         }
         return px;
@@ -291,8 +291,8 @@ var DDS = (function(){
         var frangeR = fmaxR>fminR ? 255/(fmaxR-fminR) : 1;
         var frangeG = fmaxG>fminG ? 255/(fmaxG-fminG) : 1;
         for (var j=0;j<m.w*m.h;j++) {
-          px[j*4]   = (S.halfToFloat(su16[j*2])-fminR)*frangeR|0;
-          px[j*4+1] = (S.halfToFloat(su16[j*2+1])-fminG)*frangeG|0;
+          px[j*4]   = (S.halfToFloat(su16[j*2])-fminR)*frangeR;
+          px[j*4+1] = (S.halfToFloat(su16[j*2+1])-fminG)*frangeG;
           px[j*4+2] = 0; px[j*4+3] = 255;
         }
         return px;
@@ -303,7 +303,7 @@ var DDS = (function(){
         for (var j=0;j<su16.length;j++) { if(su16[j]<vmin)vmin=su16[j]; if(su16[j]>vmax)vmax=su16[j]; }
         var range = vmax>vmin ? 255/(vmax-vmin) : 1;
         for (var j=0;j<m.w*m.h;j++) {
-          var vv = (su16[j]-vmin)*range|0;
+          var vv = (su16[j]-vmin)*range;
           px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255;
         }
         return px;
@@ -317,7 +317,7 @@ var DDS = (function(){
         }
         var frange = fmax>fmin ? 255/(fmax-fmin) : 1;
         for (var j=0;j<m.w*m.h;j++) {
-          var vv = (S.halfToFloat(su16[j])-fmin)*frange|0;
+          var vv = (S.halfToFloat(su16[j])-fmin)*frange;
           px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255;
         }
         return px;
@@ -327,7 +327,7 @@ var DDS = (function(){
         var dmin=1e9, dmax=-1e9, n=m.w*m.h;
         for (var j=0;j<n;j++) { var dv=allF[j*2]; if(isFinite(dv)){if(dv<dmin)dmin=dv;if(dv>dmax)dmax=dv;} }
         var dr=dmax>dmin?255/(dmax-dmin):1;
-        for (var j=0;j<n;j++) { var dv=isFinite(allF[j*2])?(allF[j*2]-dmin)*dr|0:0; px[j*4]=dv;px[j*4+1]=dv;px[j*4+2]=dv;px[j*4+3]=255; }
+        for (var j=0;j<n;j++) { var dv=isFinite(allF[j*2])?(allF[j*2]-dmin)*dr:0; px[j*4]=dv;px[j*4+1]=dv;px[j*4+2]=dv;px[j*4+3]=255; }
         return px;
       }
       if (fam==='R32F') {
@@ -335,12 +335,12 @@ var DDS = (function(){
         var mn=1e9, mx=-1e9;
         for (var j=0;j<f32.length;j++) { var v=f32[j]; if(isFinite(v)){if(v<mn)mn=v;if(v>mx)mx=v;} }
         var rng=mx>mn?255/(mx-mn):1;
-        for (var j=0;j<f32.length;j++) { var v=isFinite(f32[j])?(f32[j]-mn)*rng|0:0; px[j*4]=v;px[j*4+1]=v;px[j*4+2]=v;px[j*4+3]=255; }
+        for (var j=0;j<f32.length;j++) { var v=isFinite(f32[j])?(f32[j]-mn)*rng:0; px[j*4]=v;px[j*4+1]=v;px[j*4+2]=v;px[j*4+3]=255; }
         return px;
       }
       if (fam==='RGBA16') {
         var u16 = new Uint16Array(buf, off, m.w*m.h*4);
-        for (var j=0;j<m.w*m.h;j++) { px[j*4]=u16[j*4]*255/65535|0; px[j*4+1]=u16[j*4+1]*255/65535|0; px[j*4+2]=u16[j*4+2]*255/65535|0; px[j*4+3]=u16[j*4+3]*255/65535|0; }
+        for (var j=0;j<m.w*m.h;j++) { px[j*4]=u16[j*4]*255/65535; px[j*4+1]=u16[j*4+1]*255/65535; px[j*4+2]=u16[j*4+2]*255/65535; px[j*4+3]=u16[j*4+3]*255/65535; }
         return px;
       }
       if (fam==='RGBA64F') {
@@ -348,7 +348,7 @@ var DDS = (function(){
         var fmn=1e9, fmx=-1e9;
         for (var j=0;j<u16h.length;j++) { var f=S.halfToFloat(u16h[j]); if(isFinite(f)){if(f<fmn)fmn=f;if(f>fmx)fmx=f;} }
         var fr=fmx>fmn?255/(fmx-fmn):1;
-        for (var j=0;j<m.w*m.h;j++) { px[j*4]=(S.halfToFloat(u16h[j*4])-fmn)*fr|0; px[j*4+1]=(S.halfToFloat(u16h[j*4+1])-fmn)*fr|0; px[j*4+2]=(S.halfToFloat(u16h[j*4+2])-fmn)*fr|0; px[j*4+3]=255; }
+        for (var j=0;j<m.w*m.h;j++) { px[j*4]=(S.halfToFloat(u16h[j*4])-fmn)*fr; px[j*4+1]=(S.halfToFloat(u16h[j*4+1])-fmn)*fr; px[j*4+2]=(S.halfToFloat(u16h[j*4+2])-fmn)*fr; px[j*4+3]=255; }
         return px;
       }
       if (fam==='RGB9E5') {
@@ -362,7 +362,7 @@ var DDS = (function(){
         var erR=emxR>emnR?255/(emxR-emnR):1, erG=emxG>emnG?255/(emxG-emnG):1, erB=emxB>emnB?255/(emxB-emnB):1;
         for (var j=0;j<m.w*m.h;j++) {
           var p=s32e[j], exp=(p>>>27)&0x1F, sc=Math.pow(2,exp-15);
-          px[j*4]=Math.min(255,Math.max(0,((p&0x1FF)*sc-emnR)*erR|0)); px[j*4+1]=Math.min(255,Math.max(0,(((p>>>9)&0x1FF)*sc-emnG)*erG|0)); px[j*4+2]=Math.min(255,Math.max(0,(((p>>>18)&0x1FF)*sc-emnB)*erB|0)); px[j*4+3]=255;
+          px[j*4]=Math.min(255,Math.max(0,((p&0x1FF)*sc-emnR)*erR)); px[j*4+1]=Math.min(255,Math.max(0,(((p>>>9)&0x1FF)*sc-emnG)*erG)); px[j*4+2]=Math.min(255,Math.max(0,(((p>>>18)&0x1FF)*sc-emnB)*erB)); px[j*4+3]=255;
         }
         return px;
       }
@@ -371,7 +371,7 @@ var DDS = (function(){
         var fmn=1e9, fmx=-1e9;
         for (var j=0;j<f128.length;j++) { var v=f128[j]; if(isFinite(v)){if(v<fmn)fmn=v;if(v>fmx)fmx=v;} }
         var fr=fmx>fmn?255/(fmx-fmn):1;
-        for (var j=0;j<m.w*m.h;j++) { px[j*4]=Math.min(255,Math.max(0,(f128[j*4]-fmn)*fr|0)); px[j*4+1]=Math.min(255,Math.max(0,(f128[j*4+1]-fmn)*fr|0)); px[j*4+2]=Math.min(255,Math.max(0,(f128[j*4+2]-fmn)*fr|0)); px[j*4+3]=255; }
+        for (var j=0;j<m.w*m.h;j++) { px[j*4]=Math.min(255,Math.max(0,(f128[j*4]-fmn)*fr)); px[j*4+1]=Math.min(255,Math.max(0,(f128[j*4+1]-fmn)*fr)); px[j*4+2]=Math.min(255,Math.max(0,(f128[j*4+2]-fmn)*fr)); px[j*4+3]=255; }
         return px;
       }
       if (fam==='RGB96F') {
@@ -379,7 +379,7 @@ var DDS = (function(){
         var fmn=1e9, fmx=-1e9;
         for (var j=0;j<f96.length;j++) { var v=f96[j]; if(isFinite(v)){if(v<fmn)fmn=v;if(v>fmx)fmx=v;} }
         var fr=fmx>fmn?255/(fmx-fmn):1;
-        for (var j=0;j<m.w*m.h;j++) { px[j*4]=Math.min(255,Math.max(0,(f96[j*3]-fmn)*fr|0)); px[j*4+1]=Math.min(255,Math.max(0,(f96[j*3+1]-fmn)*fr|0)); px[j*4+2]=Math.min(255,Math.max(0,(f96[j*3+2]-fmn)*fr|0)); px[j*4+3]=255; }
+        for (var j=0;j<m.w*m.h;j++) { px[j*4]=Math.min(255,Math.max(0,(f96[j*3]-fmn)*fr)); px[j*4+1]=Math.min(255,Math.max(0,(f96[j*3+1]-fmn)*fr)); px[j*4+2]=Math.min(255,Math.max(0,(f96[j*3+2]-fmn)*fr)); px[j*4+3]=255; }
         return px;
       }
       if (fam==='R32G32F') {
@@ -387,12 +387,12 @@ var DDS = (function(){
         var fmnR=1e9,fmxR=-1e9,fmnG=1e9,fmxG=-1e9;
         for (var j=0;j<m.w*m.h;j++) { var fr=f32g[j*2],fg=f32g[j*2+1]; if(isFinite(fr)){if(fr<fmnR)fmnR=fr;if(fr>fmxR)fmxR=fr;} if(isFinite(fg)){if(fg<fmnG)fmnG=fg;if(fg>fmxG)fmxG=fg;} }
         var frR=fmxR>fmnR?255/(fmxR-fmnR):1, frG=fmxG>fmnG?255/(fmxG-fmnG):1;
-        for (var j=0;j<m.w*m.h;j++) { px[j*4]=Math.min(255,Math.max(0,(f32g[j*2]-fmnR)*frR|0)); px[j*4+1]=Math.min(255,Math.max(0,(f32g[j*2+1]-fmnG)*frG|0)); px[j*4+2]=0; px[j*4+3]=255; }
+        for (var j=0;j<m.w*m.h;j++) { px[j*4]=Math.min(255,Math.max(0,(f32g[j*2]-fmnR)*frR)); px[j*4+1]=Math.min(255,Math.max(0,(f32g[j*2+1]-fmnG)*frG)); px[j*4+2]=0; px[j*4+3]=255; }
         return px;
       }
       if (fam==='D24S8') {
         var s32d = new Uint32Array(buf, off, m.w*m.h);
-        for (var j=0;j<m.w*m.h;j++) { var d=(s32d[j]&0xFFFFFF)/0xFFFFFF*255|0; px[j*4]=d; px[j*4+1]=d; px[j*4+2]=d; px[j*4+3]=255; }
+        for (var j=0;j<m.w*m.h;j++) { var d=(s32d[j]&0xFFFFFF)/0xFFFFFF*255; px[j*4]=d; px[j*4+1]=d; px[j*4+2]=d; px[j*4+3]=255; }
         return px;
       }
       if (fam==='RGBA8S') {
@@ -401,18 +401,18 @@ var DDS = (function(){
           var sg=data[j*4+1]>127?(data[j*4+1]-256)/127.0:data[j*4+1]/127.0;
           var sb=data[j*4+2]>127?(data[j*4+2]-256)/127.0:data[j*4+2]/127.0;
           var sa=data[j*4+3]>127?(data[j*4+3]-256)/127.0:data[j*4+3]/127.0;
-          px[j*4]=(sr*0.5+0.5)*255|0; px[j*4+1]=(sg*0.5+0.5)*255|0;
-          px[j*4+2]=(sb*0.5+0.5)*255|0; px[j*4+3]=(sa*0.5+0.5)*255|0;
+          px[j*4]=(sr*0.5+0.5)*255; px[j*4+1]=(sg*0.5+0.5)*255;
+          px[j*4+2]=(sb*0.5+0.5)*255; px[j*4+3]=(sa*0.5+0.5)*255;
         }
         return px;
       }
       if (fam==='RGBA16S') {
         var si16 = new Int16Array(buf, off, m.w*m.h*4);
         for (var j=0;j<m.w*m.h;j++) {
-          px[j*4]=(si16[j*4]/32767.0*0.5+0.5)*255|0;
-          px[j*4+1]=(si16[j*4+1]/32767.0*0.5+0.5)*255|0;
-          px[j*4+2]=(si16[j*4+2]/32767.0*0.5+0.5)*255|0;
-          px[j*4+3]=(si16[j*4+3]/32767.0*0.5+0.5)*255|0;
+          px[j*4]=(si16[j*4]/32767.0*0.5+0.5)*255;
+          px[j*4+1]=(si16[j*4+1]/32767.0*0.5+0.5)*255;
+          px[j*4+2]=(si16[j*4+2]/32767.0*0.5+0.5)*255;
+          px[j*4+3]=(si16[j*4+3]/32767.0*0.5+0.5)*255;
         }
         return px;
       }
@@ -426,8 +426,8 @@ var DDS = (function(){
         }
         var rr=fmaxR>fminR?255/(fmaxR-fminR):1, rg=fmaxG>fminG?255/(fmaxG-fminG):1;
         for (var j=0;j<m.w*m.h;j++) {
-          px[j*4]=(si16g[j*2]/32767.0-fminR)*rr|0;
-          px[j*4+1]=(si16g[j*2+1]/32767.0-fminG)*rg|0;
+          px[j*4]=(si16g[j*2]/32767.0-fminR)*rr;
+          px[j*4+1]=(si16g[j*2+1]/32767.0-fminG)*rg;
           px[j*4+2]=0; px[j*4+3]=255;
         }
         return px;
@@ -437,14 +437,14 @@ var DDS = (function(){
         var fmin=1e9, fmax=-1e9;
         for (var j=0;j<si16v.length;j++) { var v=si16v[j]/32767.0; if(v<fmin)fmin=v; if(v>fmax)fmax=v; }
         var rr=fmax>fmin?255/(fmax-fmin):1;
-        for (var j=0;j<m.w*m.h;j++) { var vv=(si16v[j]/32767.0-fmin)*rr|0; px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255; }
+        for (var j=0;j<m.w*m.h;j++) { var vv=(si16v[j]/32767.0-fmin)*rr; px[j*4]=vv; px[j*4+1]=vv; px[j*4+2]=vv; px[j*4+3]=255; }
         return px;
       }
       if (fam==='B5G6R5') {
         var su16b = new Uint16Array(buf, off, m.w*m.h);
         for (var j=0;j<m.w*m.h;j++) {
           var p=su16b[j];
-          px[j*4]=((p>>>11)&0x1F)*255/31|0; px[j*4+1]=((p>>>5)&0x3F)*255/63|0; px[j*4+2]=(p&0x1F)*255/31|0; px[j*4+3]=255;
+          px[j*4]=((p>>>11)&0x1F)*255/31; px[j*4+1]=((p>>>5)&0x3F)*255/63; px[j*4+2]=(p&0x1F)*255/31; px[j*4+3]=255;
         }
         return px;
       }
@@ -452,7 +452,7 @@ var DDS = (function(){
         var su16a = new Uint16Array(buf, off, m.w*m.h);
         for (var j=0;j<m.w*m.h;j++) {
           var p=su16a[j];
-          px[j*4]=((p>>>10)&0x1F)*255/31|0; px[j*4+1]=((p>>>5)&0x1F)*255/31|0; px[j*4+2]=(p&0x1F)*255/31|0; px[j*4+3]=(p>>>15)?255:0;
+          px[j*4]=((p>>>10)&0x1F)*255/31; px[j*4+1]=((p>>>5)&0x1F)*255/31; px[j*4+2]=(p&0x1F)*255/31; px[j*4+3]=(p>>>15)?255:0;
         }
         return px;
       }
