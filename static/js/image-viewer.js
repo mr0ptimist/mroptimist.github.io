@@ -457,11 +457,6 @@
       wrapper.appendChild(timeBadge);
     }
 
-    // Range badge (top-right, below toolbar)
-    var ddsInfo = ddsCache.get(img.src);
-    var fam = ddsInfo && ddsInfo.dds ? ddsInfo.dds.fmt.family : '';
-    var ddsType = ddsInfo && ddsInfo.dds ? ddsInfo.dds.fmt.type : '';
-    
     // Pixel inspector
     var pxPinnedList = [];
     var pxFloat = document.createElement('div');
