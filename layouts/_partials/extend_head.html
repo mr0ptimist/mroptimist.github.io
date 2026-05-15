@@ -30,9 +30,13 @@ function runMermaid() {
   document.querySelectorAll('pre.mermaid:not([data-processed])').forEach(function(pre) {
     var html = pre.innerHTML;
     html = html.replace(/&lt;</g, '&lt;&lt;').replace(/>&gt;/g, '&gt;&gt;');
+    // Preserve <br/> before textContent strips it (HTML parser turns <br/> into <br> element)
+    html = html.replace(/<br\s*\/?>/gi, '%%MERMAID_BR%%');
     var temp = document.createElement('div');
     temp.innerHTML = html;
-    pre.textContent = temp.textContent;
+    var text = temp.textContent || temp.innerText;
+    text = text.replace(/%%MERMAID_BR%%/g, '<br/>');
+    pre.textContent = text;
   });
   mermaid.run({ querySelector: 'pre.mermaid:not([data-processed])' }).then(function() {
     document.querySelectorAll('pre.mermaid svg').forEach(function(svg) {
