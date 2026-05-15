@@ -601,7 +601,7 @@
       var lines = [];
       var fname = img.src.split('/').pop();
       if (fname) lines.unshift(fname);
-      ['event_id','file_type'].forEach(function(k) { if (data[k] !== undefined) lines.push(k + ': ' + data[k]); });
+      ['event_id','resource_name'].forEach(function(k) { if (data[k] !== undefined) lines.push(k + ': ' + data[k]); });
       var cachedFmt = ddsCache.get(img.src);
       var ddsFmt = cachedFmt && cachedFmt.dds ? cachedFmt.dds.fmt : null;
       if (rd.format) lines.push('format: ' + rd.format);
