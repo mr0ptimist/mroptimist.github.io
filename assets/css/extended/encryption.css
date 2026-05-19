@@ -191,7 +191,7 @@ details.toc summary::-webkit-details-marker {
     position: fixed;
     left: 10px;
     top: 80px;
-    width: 300px;
+    width: 220px;
     max-height: calc(100vh - 100px);
     overflow-y: auto;
     border: none;

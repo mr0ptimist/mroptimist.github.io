@@ -138,6 +138,14 @@
             {{- if ge $wc 1000 }}{{ printf "%.1fk字" (div (float $wc) 1000) }}{{ else }}{{ printf "%d字" $wc }}{{ end }}
             {{- if gt $imgCount 0 }}&nbsp;{{ printf "%d图" $imgCount }}{{ end }}
         </span>
+        <button id="collapse-all-btn" class="collapse-all-btn" title="折叠/展开全部章节" aria-label="折叠/展开全部章节">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" y1="7" x2="20" y2="7"></line>
+                <line x1="8" y1="12" x2="20" y2="12"></line>
+                <line x1="12" y1="17" x2="20" y2="17"></line>
+            </svg>
+        </button>
         {{- end }}
     </nav>
 </header>

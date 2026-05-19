@@ -158,6 +158,8 @@
     tocEl.style.width = savedToc + 'px';
     tocWidthSlider.value = savedToc;
     tocWidthValue.textContent = savedToc;
+  } else if (tocEl) {
+    tocEl.style.width = tocWidthSlider.value + 'px';
   }
   adjustMainMargin();
 
@@ -207,6 +209,8 @@ window.ImageViewerConfig = { workingDir: "{{ hugo.WorkingDir }}" };
       var current = sibling;
       sibling = sibling.nextSibling;
       if (current.nodeType === 1 && current.tagName === 'H2') break;
+      if (current.nodeType === 1 && current.tagName === 'H1') break;
+      if (current.nodeType === 1 && current.tagName === 'HR') break;
       if (current.nodeType === 1 && current.tagName === 'DETAILS' && current.classList.contains('collapsible-section')) break;
       body.appendChild(current);
     }
@@ -285,6 +289,23 @@ window.ImageViewerConfig = { workingDir: "{{ hugo.WorkingDir }}" };
       sessionStorage.setItem('collapse_state', JSON.stringify(all));
     }
   });
+
+  // Collapse/Expand all button
+  var collapseBtn = document.getElementById('collapse-all-btn');
+  if (collapseBtn) {
+    collapseBtn.addEventListener('click', function() {
+      var sections = postContent.querySelectorAll('details.collapsible-section, details.subsection, details.subsubsection');
+      if (!sections.length) return;
+      var anyOpen = Array.prototype.some.call(sections, function(s) { return s.open; });
+      var target = !anyOpen;
+      sections.forEach(function(s) { s.open = target; });
+      var all = JSON.parse(sessionStorage.getItem('collapse_state') || '{}');
+      var state = [];
+      sections.forEach(function(s) { state.push(s.open); });
+      all[location.pathname] = state;
+      sessionStorage.setItem('collapse_state', JSON.stringify(all));
+    });
+  }
 })();
 </script>
 

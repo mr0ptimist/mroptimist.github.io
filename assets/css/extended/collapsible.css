@@ -142,3 +142,21 @@
 .post-content details.collapsible-section[open] {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
+
+/* collapse-all toggle button in nav bar */
+.collapse-all-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--primary);
+  cursor: pointer;
+  padding: 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+  transition: color 0.2s;
+}
+.collapse-all-btn:hover {
+  color: var(--accent);
+}
